@@ -1,0 +1,4149 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <!-- PWA Meta, Manifest & Icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Game Board" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#020617" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/png" href="./icon.png" />
+  <link rel="apple-touch-icon" href="./icon.png" />
+  <title>Game Board — Collaborative Scorekeeper</title>
+
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+          boxShadow: {
+            soft: '0 10px 30px -10px rgba(15, 23, 42, 0.14)',
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="font-sans antialiased bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white transition-colors duration-200">
+
+  <!-- Top Navigation Header -->
+  <header class="sticky top-0 z-30 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80">
+    <div class="max-w-5xl mx-auto px-3 sm:px-5 h-16 flex items-center justify-between gap-2">
+      <!-- Brand / Home Trigger -->
+      <button id="header-home-btn" class="flex items-center gap-2.5 text-left group min-w-0">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition shrink-0">
+          <!-- Inline SVG Game Board Icon -->
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+            <path d="M17.5 14v7M14 17.5h7"></path>
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <div class="font-extrabold text-base sm:text-lg leading-tight tracking-tight text-slate-900 dark:text-white truncate">
+            Game Board
+          </div>
+          <div id="connection-status-pill" class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            <span id="connection-dot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span id="connection-label">Connecting...</span>
+          </div>
+        </div>
+      </button>
+
+      <!-- Active Room Pill (Center, hidden on Landing) -->
+      <div id="header-room-controls" class="hidden items-center gap-1.5 sm:gap-2">
+        <button id="header-copy-code-btn" title="Copy 4-character Room Code" class="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition">
+          <span class="hidden sm:inline text-[10px] font-bold uppercase tracking-wider opacity-75">Room</span>
+          <span id="header-room-code-text" class="font-extrabold text-sm tracking-widest">----</span>
+          <svg class="w-3.5 h-3.5 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+        <button id="header-players-btn" title="Players & Room Settings" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <span id="header-player-count">0</span>
+        </button>
+      </div>
+
+      <!-- Right Utility Actions: Copy PWA Link, Profile, Theme Toggle -->
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <!-- Quick Copy PWA Link Button -->
+        <button
+          id="header-copy-link-btn"
+          title="Copy app invite link to share with friends"
+          class="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-2xl bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 font-bold text-xs active:scale-95 transition"
+        >
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+          </svg>
+          <span id="header-copy-link-label" class="hidden sm:inline">Copy Link</span>
+        </button>
+
+        <!-- Current Player Profile Chip -->
+        <button id="header-profile-btn" class="hidden items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold transition">
+          <span id="header-profile-emoji" class="text-base leading-none">♟️</span>
+          <span id="header-profile-name" class="hidden md:inline max-w-[100px] truncate">Player</span>
+        </button>
+
+        <!-- Dark Mode Toggle -->
+        <button id="theme-toggle-btn" aria-label="Toggle dark mode" class="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-amber-300 flex items-center justify-center transition">
+          <svg id="icon-moon" class="w-5 h-5 block dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <svg id="icon-sun" class="w-5 h-5 hidden dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Dynamic Application Viewport -->
+  <main id="app-main" class="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-5 py-5 sm:py-7">
+    <!-- Loading state replaced once initialized -->
+    <div class="py-20 text-center space-y-3">
+      <div class="w-12 h-12 mx-auto rounded-2xl bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center text-2xl animate-pulse">🎲</div>
+      <div class="text-sm font-bold text-slate-500 dark:text-slate-400">Setting up the table...</div>
+    </div>
+  </main>
+
+  <!-- Modal Overlay Container -->
+  <div id="modal-backdrop" class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm p-3 sm:p-5 items-center justify-center overflow-y-auto">
+    <div id="modal-panel" class="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden my-auto max-h-[92vh] overflow-y-auto">
+      <!-- Dynamic Modal Content -->
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed top-20 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-2 pointer-events-none w-[92vw] max-w-md"></div>
+
+  <!-- Firebase + App Logic -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import {
+      getAuth,
+      signInAnonymously,
+      signInWithCustomToken,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import {
+      getFirestore,
+      doc,
+      getDoc,
+      setDoc,
+      deleteDoc,
+      onSnapshot,
+      collection
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // =========================================================================
+    // 1. FIREBASE CONFIG (Connected to activity-board-97e62)
+    // =========================================================================
+    const CUSTOM_FIREBASE_CONFIG = {
+      apiKey: "AIzaSyCk4_Bgfc7ubmzyQ74Km98Mf51KEnV5QUs",
+      authDomain: "activity-board-97e62.firebaseapp.com",
+      projectId: "activity-board-97e62",
+      storageBucket: "activity-board-97e62.firebasestorage.app",
+      messagingSenderId: "576719561468",
+      appId: "1:576719561468:web:dd0ff3eba62c8efd776d79"
+    };
+
+    const appId = CUSTOM_FIREBASE_CONFIG
+      ? 'game-board-pwa'
+      : (typeof __app_id !== 'undefined' ? __app_id : 'game-board-pwa');
+    let db = null;
+    let auth = null;
+    let fbUser = null;
+    let isLocalFallback = false;
+
+    // In-memory fallback store (used only if Firebase config is completely absent)
+    const localStore = {
+      rooms: {},
+      profiles: {},
+      matches: {},
+      savedMatches: {},
+      userPrefs: null,
+    };
+
+    // =========================================================================
+    // 2. GAME CATALOG, AVATARS & BUILT-IN EMOJI SET
+    // =========================================================================
+    const AVATARS = [
+      { id: 'pawn', emoji: '♟️', label: 'Pawn', color: 'bg-indigo-100 dark:bg-indigo-900/60' },
+      { id: 'die', emoji: '🎲', label: 'Die', color: 'bg-emerald-100 dark:bg-emerald-900/60' },
+      { id: 'crown', emoji: '👑', label: 'Crown', color: 'bg-amber-100 dark:bg-amber-900/60' },
+      { id: 'joker', emoji: '🃏', label: 'Wild', color: 'bg-rose-100 dark:bg-rose-900/60' },
+      { id: 'fox', emoji: '🦊', label: 'Fox', color: 'bg-orange-100 dark:bg-orange-900/60' },
+      { id: 'rocket', emoji: '🚀', label: 'Rocket', color: 'bg-sky-100 dark:bg-sky-900/60' },
+      { id: 'puzzle', emoji: '🧩', label: 'Piece', color: 'bg-violet-100 dark:bg-violet-900/60' },
+      { id: 'star', emoji: '⭐', label: 'Star', color: 'bg-yellow-100 dark:bg-yellow-900/60' },
+      { id: 'target', emoji: '🎯', label: 'Target', color: 'bg-red-100 dark:bg-red-900/60' },
+      { id: 'owl', emoji: '🦉', label: 'Owl', color: 'bg-teal-100 dark:bg-teal-900/60' },
+      { id: 'dragon', emoji: '🐉', label: 'Dragon', color: 'bg-lime-100 dark:bg-lime-900/60' },
+      { id: 'knight', emoji: '♞', label: 'Knight', color: 'bg-slate-200 dark:bg-slate-700' },
+    ];
+
+    const AVATAR_BG_PALETTE = [
+      'bg-indigo-100 dark:bg-indigo-900/60',
+      'bg-emerald-100 dark:bg-emerald-900/60',
+      'bg-amber-100 dark:bg-amber-900/60',
+      'bg-rose-100 dark:bg-rose-900/60',
+      'bg-orange-100 dark:bg-orange-900/60',
+      'bg-sky-100 dark:bg-sky-900/60',
+      'bg-violet-100 dark:bg-violet-900/60',
+      'bg-teal-100 dark:bg-teal-900/60',
+      'bg-fuchsia-100 dark:bg-fuchsia-900/60',
+      'bg-lime-100 dark:bg-lime-900/60',
+    ];
+
+    // Built-in searchable emoji catalog (immediately available offline; expanded automatically with full Unicode set)
+    const BUILTIN_EMOJI_CATALOG = [
+      // Games & Activities
+      { emoji: '♟️', name: 'chess pawn game piece', cat: 'Games' },
+      { emoji: '🎲', name: 'game die dice roll', cat: 'Games' },
+      { emoji: '🃏', name: 'joker playing card wild', cat: 'Games' },
+      { emoji: '👑', name: 'crown king queen royal', cat: 'Games' },
+      { emoji: '🧩', name: 'puzzle piece jigsaw', cat: 'Games' },
+      { emoji: '🎯', name: 'bullseye target dart', cat: 'Games' },
+      { emoji: '🏆', name: 'trophy winner champion', cat: 'Games' },
+      { emoji: '🥇', name: 'first place gold medal', cat: 'Games' },
+      { emoji: '🎮', name: 'video game controller', cat: 'Games' },
+      { emoji: '🎰', name: 'slot machine casino', cat: 'Games' },
+      { emoji: '🎱', name: 'pool 8 ball billiards', cat: 'Games' },
+      { emoji: '🎳', name: 'bowling pin ball', cat: 'Games' },
+      { emoji: '♠️', name: 'spade suit cards', cat: 'Games' },
+      { emoji: '♥️', name: 'heart suit cards', cat: 'Games' },
+      { emoji: '♦️', name: 'diamond suit cards', cat: 'Games' },
+      { emoji: '♣️', name: 'club suit cards', cat: 'Games' },
+      { emoji: '🀄', name: 'mahjong red dragon tile', cat: 'Games' },
+      { emoji: '🎴', name: 'flower playing cards', cat: 'Games' },
+      { emoji: '🏀', name: 'basketball sport', cat: 'Games' },
+      { emoji: '⚽', name: 'soccer football sport', cat: 'Games' },
+      { emoji: '🏈', name: 'american football sport', cat: 'Games' },
+      { emoji: '⚾', name: 'baseball sport', cat: 'Games' },
+      { emoji: '🎾', name: 'tennis ball sport', cat: 'Games' },
+      { emoji: '🏓', name: 'ping pong table tennis', cat: 'Games' },
+      { emoji: '⛳', name: 'golf flag hole', cat: 'Games' },
+      { emoji: '🎸', name: 'guitar music rock', cat: 'Games' },
+      { emoji: '🎨', name: 'artist palette paint', cat: 'Games' },
+      { emoji: '🎭', name: 'performing arts theater masks', cat: 'Games' },
+      // Animals
+      { emoji: '🦊', name: 'fox animal clever', cat: 'Animals' },
+      { emoji: '🦉', name: 'owl bird wise', cat: 'Animals' },
+      { emoji: '🐉', name: 'dragon fantasy fire', cat: 'Animals' },
+      { emoji: '🦖', name: 't-rex dinosaur rex', cat: 'Animals' },
+      { emoji: '🦄', name: 'unicorn magic horse', cat: 'Animals' },
+      { emoji: '🐶', name: 'dog puppy pet', cat: 'Animals' },
+      { emoji: '🐱', name: 'cat kitty pet', cat: 'Animals' },
+      { emoji: '🦁', name: 'lion king jungle', cat: 'Animals' },
+      { emoji: '🐯', name: 'tiger cat wild', cat: 'Animals' },
+      { emoji: '🐻', name: 'bear animal grizzly', cat: 'Animals' },
+      { emoji: '🐼', name: 'panda bear cute', cat: 'Animals' },
+      { emoji: '🐨', name: 'koala bear australia', cat: 'Animals' },
+      { emoji: '🐸', name: 'frog amphibian green', cat: 'Animals' },
+      { emoji: '🐧', name: 'penguin bird ice', cat: 'Animals' },
+      { emoji: '🦅', name: 'eagle bird hawk', cat: 'Animals' },
+      { emoji: '🦈', name: 'shark ocean fish', cat: 'Animals' },
+      { emoji: '🐙', name: 'octopus sea tentacles', cat: 'Animals' },
+      { emoji: '🐢', name: 'turtle tortoise slow', cat: 'Animals' },
+      { emoji: '🐝', name: 'honeybee bee buzz', cat: 'Animals' },
+      { emoji: '🦋', name: 'butterfly insect wings', cat: 'Animals' },
+      { emoji: '🐺', name: 'wolf pack howl', cat: 'Animals' },
+      { emoji: '🦝', name: 'raccoon trash panda', cat: 'Animals' },
+      { emoji: '🦥', name: 'sloth chill slow', cat: 'Animals' },
+      { emoji: '🦩', name: 'flamingo pink bird', cat: 'Animals' },
+      { emoji: '🐳', name: 'whale ocean water', cat: 'Animals' },
+      { emoji: '🦀', name: 'crab beach zodiac', cat: 'Animals' },
+      { emoji: '🦚', name: 'peacock bird feathers', cat: 'Animals' },
+      { emoji: '🦔', name: 'hedgehog spiky cute', cat: 'Animals' },
+      // Faces & Characters
+      { emoji: '😎', name: 'smiling face with sunglasses cool', cat: 'Faces' },
+      { emoji: '🤠', name: 'cowboy hat face western', cat: 'Faces' },
+      { emoji: '🥳', name: 'partying face celebration', cat: 'Faces' },
+      { emoji: '🤓', name: 'nerd face glasses smart', cat: 'Faces' },
+      { emoji: '😈', name: 'smiling face with horns devil', cat: 'Faces' },
+      { emoji: '👻', name: 'ghost spooky halloween', cat: 'Faces' },
+      { emoji: '👽', name: 'alien space ufo', cat: 'Faces' },
+      { emoji: '🤖', name: 'robot bot sci-fi', cat: 'Faces' },
+      { emoji: '🧙', name: 'mage wizard magic', cat: 'Faces' },
+      { emoji: '🥷', name: 'ninja stealth fighter', cat: 'Faces' },
+      { emoji: '🦸', name: 'superhero cape hero', cat: 'Faces' },
+      { emoji: '🧛', name: 'vampire dracula', cat: 'Faces' },
+      { emoji: '🧜', name: 'merperson mermaid ocean', cat: 'Faces' },
+      { emoji: '🧚', name: 'fairy magic wings', cat: 'Faces' },
+      { emoji: '🤡', name: 'clown face circus', cat: 'Faces' },
+      { emoji: '💀', name: 'skull skeleton pirate', cat: 'Faces' },
+      { emoji: '😀', name: 'grinning face happy smile', cat: 'Faces' },
+      { emoji: '😂', name: 'face with tears of joy laugh', cat: 'Faces' },
+      { emoji: '🤩', name: 'star-struck excited', cat: 'Faces' },
+      { emoji: '🧐', name: 'face with monocle detective', cat: 'Faces' },
+      // Food & Drink
+      { emoji: '🍕', name: 'pizza slice cheese', cat: 'Food' },
+      { emoji: '🌮', name: 'taco mexican food', cat: 'Food' },
+      { emoji: '🍔', name: 'hamburger burger', cat: 'Food' },
+      { emoji: '🍟', name: 'french fries snack', cat: 'Food' },
+      { emoji: '🍣', name: 'sushi japanese food', cat: 'Food' },
+      { emoji: '🍩', name: 'doughnut donut sweet', cat: 'Food' },
+      { emoji: '🍪', name: 'cookie chocolate chip', cat: 'Food' },
+      { emoji: '🍿', name: 'popcorn movie snack', cat: 'Food' },
+      { emoji: '🍦', name: 'ice cream cone dessert', cat: 'Food' },
+      { emoji: '🧁', name: 'cupcake bakery sweet', cat: 'Food' },
+      { emoji: '🥑', name: 'avocado green fruit', cat: 'Food' },
+      { emoji: '🍓', name: 'strawberry fruit berry', cat: 'Food' },
+      { emoji: '🍉', name: 'watermelon fruit summer', cat: 'Food' },
+      { emoji: '🍍', name: 'pineapple tropical fruit', cat: 'Food' },
+      { emoji: '🌶️', name: 'hot pepper chili spicy', cat: 'Food' },
+      { emoji: '☕', name: 'hot beverage coffee mug', cat: 'Food' },
+      { emoji: '🍺', name: 'beer mug drink cheers', cat: 'Food' },
+      { emoji: '🍷', name: 'wine glass drink', cat: 'Food' },
+      { emoji: '🧋', name: 'bubble tea boba drink', cat: 'Food' },
+      { emoji: '🧀', name: 'cheese wedge snack', cat: 'Food' },
+      // Nature & Space
+      { emoji: '⭐', name: 'star yellow gold', cat: 'Nature' },
+      { emoji: '🌟', name: 'glowing star sparkle', cat: 'Nature' },
+      { emoji: '🔥', name: 'fire flame hot streak', cat: 'Nature' },
+      { emoji: '⚡', name: 'high voltage lightning bolt', cat: 'Nature' },
+      { emoji: '🌈', name: 'rainbow color sky', cat: 'Nature' },
+      { emoji: '☀️', name: 'sun sunny bright', cat: 'Nature' },
+      { emoji: '🌙', name: 'crescent moon night', cat: 'Nature' },
+      { emoji: '🌍', name: 'globe earth world', cat: 'Nature' },
+      { emoji: '🌵', name: 'cactus desert plant', cat: 'Nature' },
+      { emoji: '🌻', name: 'sunflower flower yellow', cat: 'Nature' },
+      { emoji: '🌹', name: 'rose flower red', cat: 'Nature' },
+      { emoji: '🍀', name: 'four leaf clover lucky', cat: 'Nature' },
+      { emoji: '🍄', name: 'mushroom fungi forest', cat: 'Nature' },
+      { emoji: '❄️', name: 'snowflake winter cold', cat: 'Nature' },
+      { emoji: '🌊', name: 'water wave ocean surf', cat: 'Nature' },
+      { emoji: '💎', name: 'gem stone diamond jewel', cat: 'Nature' },
+      // Objects & Travel
+      { emoji: '🚀', name: 'rocket ship space launch', cat: 'Objects' },
+      { emoji: '🛸', name: 'flying saucer ufo space', cat: 'Objects' },
+      { emoji: '🚗', name: 'automobile car racing', cat: 'Objects' },
+      { emoji: '⛵', name: 'sailboat boat sea', cat: 'Objects' },
+      { emoji: '✈️', name: 'airplane flight travel', cat: 'Objects' },
+      { emoji: '⚓', name: 'anchor ship nautical', cat: 'Objects' },
+      { emoji: '⚔️', name: 'crossed swords battle', cat: 'Objects' },
+      { emoji: '🛡️', name: 'shield defense armor', cat: 'Objects' },
+      { emoji: '🔮', name: 'crystal ball fortune magic', cat: 'Objects' },
+      { emoji: '🎩', name: 'top hat monopoly magic', cat: 'Objects' },
+      { emoji: '🧭', name: 'compass adventure navigate', cat: 'Objects' },
+      { emoji: '🔑', name: 'key unlock secret', cat: 'Objects' },
+      { emoji: '💡', name: 'light bulb idea smart', cat: 'Objects' },
+      { emoji: '💣', name: 'bomb boom explosive', cat: 'Objects' },
+      { emoji: '🎈', name: 'balloon party red', cat: 'Objects' },
+      { emoji: '🎉', name: 'party popper confetti', cat: 'Objects' },
+      { emoji: '❤️', name: 'red heart love', cat: 'Objects' },
+      { emoji: '💜', name: 'purple heart love', cat: 'Objects' },
+      { emoji: '💚', name: 'green heart love', cat: 'Objects' },
+      { emoji: '🩵', name: 'light blue heart love', cat: 'Objects' },
+    ];
+
+    const GAME_CATALOG = [
+      {
+        id: 'gin-rummy',
+        name: 'Gin Rummy',
+        category: 'Card Game',
+        playersLabel: '2–4 Players',
+        tagline: 'Round-by-round point counter to a custom target score.',
+        gradient: 'from-rose-500 via-pink-500 to-indigo-600',
+        emoji: '🃏',
+        defaultRules: {
+          targetScore: 100,
+          ginBonus: 25,
+          undercutBonus: 25,
+        },
+        rulesOverview: [
+          'Each hand, log the points earned by each player using the built-in calculator number pad.',
+          'Optional quick-add buttons let you drop in Gin or Undercut bonuses with a single tap.',
+          'The game automatically finishes and crowns the winner once a player reaches or exceeds the Target Score.',
+        ],
+      },
+      {
+        id: 'scrabble',
+        name: 'Scrabble',
+        category: 'Board & Word Game',
+        playersLabel: '2–4 Players',
+        tagline: 'Open-ended word scoring with built-in OUT tile-transfer endgame.',
+        gradient: 'from-amber-500 via-orange-500 to-emerald-600',
+        emoji: '🔤',
+        defaultRules: {
+          doubleTileTransfer: false,
+        },
+        rulesOverview: [
+          'Log points turn-by-turn or round-by-round with no maximum score limit.',
+          'Use the built-in calculator pad (e.g., 14×2+50) and the +50 Bingo button for effortless math.',
+          'When a player uses their last tile and the bag is empty, tap OUT to log remaining rack values—subtracting from each opponent and adding to the player who went out before determining the final winner.',
+        ],
+      },
+    ];
+
+    // =========================================================================
+    // 3. APPLICATION STATE
+    // =========================================================================
+    const state = {
+      view: 'landing', // 'landing' | 'lobby' | 'match'
+      currentUser: {
+        uid: null,
+        name: '',
+        email: '',
+        profileId: null,
+        avatar: '♟️',
+        isGuest: true,
+        favorites: [],
+      },
+      currentRoomCode: null,
+      currentRoom: null,
+      openRooms: [],
+      recentRoomCodes: [],
+      roomUnsubscribe: null,
+      openRoomsUnsubscribe: null,
+      historyUnsubscribe: null,
+      savedMatchesUnsubscribe: null,
+      matchHistory: [],
+      savedMatches: [],
+      searchQuery: '',
+      theme: 'light',
+      emojiCatalog: [...BUILTIN_EMOJI_CATALOG],
+      emojiCatalogLoaded: false,
+      pendingInviteCode: null,
+    };
+
+    // Tracks any active modal keyboard listener so it is always cleaned up on close
+    let activeModalKeydownHandler = null;
+
+    // =========================================================================
+    // 4. UTILITIES, CLIPBOARD & SHAREABLE LINK HELPERS
+    // =========================================================================
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function generateId(prefix = 'id') {
+      const rand = Math.random().toString(36).slice(2, 8);
+      return `${prefix}_${Date.now().toString(36)}_${rand}`;
+    }
+
+    function generateRoomCode() {
+      // Excludes ambiguous chars (0, O, 1, I, L)
+      const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 4; i++) {
+        code += chars[Math.floor(Math.random() * chars.length)];
+      }
+      return code;
+    }
+
+    function normalizeEmailToProfileId(email) {
+      return String(email || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '_');
+    }
+
+    function formatShortDate(ts) {
+      if (!ts) return '';
+      try {
+        return new Date(ts).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+      } catch {
+        return '';
+      }
+    }
+
+    /**
+     * Copies text safely inside both standard browsers and sandboxed iframes
+     * using document.execCommand('copy').
+     */
+    function copyTextToClipboard(text) {
+      if (!text) return false;
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (err) {
+        console.error('Clipboard copy error:', err);
+        return false;
+      }
+    }
+
+    /**
+     * Builds a shareable URL for the PWA. If currently inside a room, appends
+     * `?room=CODE` so friends tapping the texted link jump straight into the table.
+     */
+    function buildShareablePwaLink(includeRoomCode = true) {
+      let baseUrl = '';
+      try {
+        const loc = window.location;
+        if (loc && (loc.protocol === 'http:' || loc.protocol === 'https:') && loc.origin && loc.origin !== 'null') {
+          baseUrl = `${loc.origin}${loc.pathname}`;
+        } else if (document.referrer && /^https?:\/\//i.test(document.referrer)) {
+          const refUrl = new URL(document.referrer);
+          baseUrl = `${refUrl.origin}${refUrl.pathname}`;
+        }
+      } catch {
+        baseUrl = '';
+      }
+
+      if (!baseUrl) {
+        return null;
+      }
+
+      if (includeRoomCode && state.currentRoomCode) {
+        return `${baseUrl}?room=${encodeURIComponent(state.currentRoomCode)}`;
+      }
+      return baseUrl;
+    }
+
+    function handleQuickCopyAppLink(includeRoomCode = true) {
+      const link = buildShareablePwaLink(includeRoomCode);
+      const roomCode = includeRoomCode ? state.currentRoomCode : null;
+
+      if (link) {
+        const copied = copyTextToClipboard(link);
+        if (copied) {
+          showToast(
+            roomCode
+              ? `Invite link for Room ${roomCode} copied! Paste in a text to friends.`
+              : 'Game Board link copied! Paste in a text to share.',
+            'success'
+          );
+          return;
+        }
+      }
+
+      // Fallback when previewing in an offline/srcdoc frame without an HTTP URL
+      const fallbackText = roomCode
+        ? `Join my Game Board room! Room code: ${roomCode}`
+        : 'Game Board — Real-Time Scorekeeper PWA';
+      copyTextToClipboard(fallbackText);
+      showToast(
+        roomCode
+          ? `Copied invite text for Room ${roomCode} (will copy full PWA URL once hosted).`
+          : 'Preview frame has no public URL yet—will copy your live PWA link once hosted!',
+        'info'
+      );
+    }
+
+    function getAvatarObj(avatarId) {
+      if (!avatarId) return AVATARS[0];
+      const legacy = AVATARS.find((a) => a.id === avatarId);
+      if (legacy) return legacy;
+      const str = String(avatarId).trim();
+      if (!str) return AVATARS[0];
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+      }
+      const color = AVATAR_BG_PALETTE[Math.abs(hash) % AVATAR_BG_PALETTE.length];
+      const foundMeta = state.emojiCatalog.find((item) => item.emoji === str);
+      return {
+        id: str,
+        emoji: str,
+        label: foundMeta ? foundMeta.name : 'Game Piece',
+        color,
+      };
+    }
+
+    function pickRandomEmoji() {
+      const pool = state.emojiCatalog.length > 0 ? state.emojiCatalog : BUILTIN_EMOJI_CATALOG;
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      return pick ? pick.emoji : '🎲';
+    }
+
+    /**
+     * Asynchronously loads the complete standard Unicode emoji set (~1,800+ emojis)
+     * in the background so users can search every emoji or roll a true random piece.
+     */
+    async function loadFullEmojiCatalog() {
+      if (state.emojiCatalogLoaded) return;
+      try {
+        const res = await fetch('https://cdn.jsdelivr.net/npm/unicode-emoji-json@0.6.0/data-by-emoji.json');
+        if (!res.ok) return;
+        const data = await res.json();
+        const groupMap = {
+          'Smileys & Emotion': 'Faces',
+          'People & Body': 'Faces',
+          'Animals & Nature': 'Animals',
+          'Food & Drink': 'Food',
+          'Travel & Places': 'Nature',
+          'Activities': 'Games',
+          'Objects': 'Objects',
+          'Symbols': 'Objects',
+          'Flags': 'Objects',
+        };
+        const seen = new Set(BUILTIN_EMOJI_CATALOG.map((item) => item.emoji));
+        const merged = [...BUILTIN_EMOJI_CATALOG];
+        Object.entries(data).forEach(([emoji, meta]) => {
+          if (seen.has(emoji)) return;
+          seen.add(emoji);
+          merged.push({
+            emoji,
+            name: `${meta?.name || ''} ${meta?.group || ''}`.toLowerCase().trim(),
+            cat: groupMap[meta?.group] || 'Objects',
+          });
+        });
+        state.emojiCatalog = merged;
+        state.emojiCatalogLoaded = true;
+      } catch (err) {
+        console.warn('Using built-in emoji catalog:', err?.message || err);
+      }
+    }
+
+    /**
+     * Safely evaluates simple calculator math expressions like "12+5*2-3"
+     * (supporting standard + - * / as well as display glyphs − ×).
+     */
+    function evaluateScoreExpression(raw) {
+      const cleaned = String(raw || '')
+        .replace(/−/g, '-')
+        .replace(/×/g, '*')
+        .replace(/÷/g, '/')
+        .replace(/\s+/g, '');
+      if (!cleaned) return 0;
+      if (!/^[0-9+\-*/().]+$/.test(cleaned)) return NaN;
+      try {
+        // Safe restricted arithmetic evaluator using Function after strict regex whitelist
+        const result = Function(`"use strict"; return (${cleaned});`)();
+        if (typeof result !== 'number' || !Number.isFinite(result)) return NaN;
+        return Math.round(result);
+      } catch {
+        return NaN;
+      }
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const styles = {
+        info: 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900',
+        success: 'bg-emerald-600 text-white',
+        warning: 'bg-amber-500 text-slate-950',
+        error: 'bg-rose-600 text-white',
+      };
+      const toast = document.createElement('div');
+      toast.className = `pointer-events-auto px-4 py-2.5 rounded-2xl shadow-xl font-bold text-xs sm:text-sm text-center transition-all duration-300 ${styles[type] || styles.info}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-8px)';
+        setTimeout(() => toast.remove(), 300);
+      }, 3200);
+    }
+
+    function updateConnectionBadge(status, label) {
+      const dot = document.getElementById('connection-dot');
+      const text = document.getElementById('connection-label');
+      if (!dot || !text) return;
+      const colors = {
+        ok: 'bg-emerald-500',
+        warn: 'bg-amber-400',
+        local: 'bg-sky-500',
+        err: 'bg-rose-500',
+      };
+      dot.className = `w-2 h-2 rounded-full ${colors[status] || colors.warn}`;
+      text.textContent = label;
+    }
+
+    function applyTheme(theme) {
+      state.theme = theme === 'dark' ? 'dark' : 'light';
+      const htmlEl = document.documentElement;
+      if (state.theme === 'dark') {
+        htmlEl.classList.add('dark');
+        htmlEl.classList.remove('light');
+      } else {
+        htmlEl.classList.remove('dark');
+        htmlEl.classList.add('light');
+      }
+    }
+
+    function initTheme() {
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      applyTheme(prefersDark ? 'dark' : 'light');
+    }
+
+    function isHost(room = state.currentRoom) {
+      if (!room || !state.currentUser.uid) return false;
+      return room.hostUid === state.currentUser.uid;
+    }
+
+    function canCurrentUserScore(room = state.currentRoom) {
+      if (!room) return false;
+      if (isHost(room)) return true;
+      return room.settings?.whoCanScore !== 'host';
+    }
+
+    function getRejoinableRooms() {
+      const uid = state.currentUser.uid;
+      const pid = state.currentUser.profileId;
+      const recentSet = new Set(state.recentRoomCodes || []);
+
+      return (state.openRooms || []).filter((r) => {
+        if (!r || r.status === 'closed') return false;
+        if (uid && r.hostUid === uid) return true;
+        if (recentSet.has(r.code)) return true;
+        return (r.players || []).some(
+          (p) =>
+            (uid && p.claimedByUid === uid) ||
+            (pid && p.profileId && p.profileId === pid)
+        );
+      });
+    }
+
+    // =========================================================================
+    // 5. FIREBASE INITIALIZATION & STRICT PATH HELPERS (RULE 1, 2, 3)
+    // =========================================================================
+    const getRoomsCol = () => collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
+    const getRoomDoc = (code) => doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code);
+    const getProfileDoc = (pid) => doc(db, 'artifacts', appId, 'public', 'data', 'profiles', pid);
+    const getMatchesCol = () => collection(db, 'artifacts', appId, 'public', 'data', 'matches');
+    const getMatchDoc = (mid) => doc(db, 'artifacts', appId, 'public', 'data', 'matches', mid);
+    const getSavedMatchesCol = () => collection(db, 'artifacts', appId, 'public', 'data', 'savedMatches');
+    const getSavedMatchDoc = (sid) => doc(db, 'artifacts', appId, 'public', 'data', 'savedMatches', sid);
+    const getUserPrefsDoc = (uid) => doc(db, 'artifacts', appId, 'users', uid, 'preferences', 'settings');
+
+    async function loadUserPreferencesFromStore() {
+      if (isLocalFallback) {
+        if (localStore.userPrefs) {
+          applyLoadedPrefs(localStore.userPrefs);
+        }
+        return;
+      }
+      if (!fbUser) return;
+      try {
+        const snap = await getDoc(getUserPrefsDoc(fbUser.uid));
+        if (snap.exists()) {
+          applyLoadedPrefs(snap.data());
+        }
+      } catch (err) {
+        console.warn('Could not load user preferences:', err?.message || err);
+      }
+    }
+
+    function applyLoadedPrefs(prefs) {
+      if (!prefs) return;
+      if (prefs.theme === 'dark' || prefs.theme === 'light') {
+        applyTheme(prefs.theme);
+      }
+      if (prefs.name) state.currentUser.name = prefs.name;
+      if (prefs.email) state.currentUser.email = prefs.email;
+      if (prefs.profileId) state.currentUser.profileId = prefs.profileId;
+      if (prefs.avatar) state.currentUser.avatar = getAvatarObj(prefs.avatar).emoji;
+      if (typeof prefs.isGuest === 'boolean') state.currentUser.isGuest = prefs.isGuest;
+      if (Array.isArray(prefs.favorites)) state.currentUser.favorites = prefs.favorites;
+      if (Array.isArray(prefs.recentRoomCodes)) state.recentRoomCodes = prefs.recentRoomCodes;
+    }
+
+    async function persistUserPreferences() {
+      const payload = {
+        theme: state.theme,
+        name: state.currentUser.name || '',
+        email: state.currentUser.email || '',
+        profileId: state.currentUser.profileId || null,
+        avatar: state.currentUser.avatar || '♟️',
+        isGuest: Boolean(state.currentUser.isGuest),
+        favorites: state.currentUser.favorites || [],
+        recentRoomCodes: state.recentRoomCodes || [],
+        updatedAt: Date.now(),
+      };
+      if (isLocalFallback) {
+        localStore.userPrefs = payload;
+        return;
+      }
+      if (!fbUser) return;
+      try {
+        await setDoc(getUserPrefsDoc(fbUser.uid), payload, { merge: true });
+      } catch (err) {
+        console.warn('Could not persist user preferences:', err?.message || err);
+      }
+    }
+
+    function rememberRoomCode(code) {
+      const clean = String(code || '').replace(/\s+/g, '').toUpperCase();
+      if (!clean) return;
+      state.recentRoomCodes = [clean, ...state.recentRoomCodes.filter((c) => c !== clean)].slice(0, 12);
+      persistUserPreferences();
+    }
+
+    function forgetRoomCode(code) {
+      const clean = String(code || '').replace(/\s+/g, '').toUpperCase();
+      state.recentRoomCodes = state.recentRoomCodes.filter((c) => c !== clean);
+      persistUserPreferences();
+    }
+
+    async function initFirebase() {
+      try {
+        let firebaseConfig = CUSTOM_FIREBASE_CONFIG;
+        if (!firebaseConfig && typeof __firebase_config !== 'undefined' && __firebase_config) {
+          firebaseConfig = typeof __firebase_config === 'string'
+            ? JSON.parse(__firebase_config)
+            : __firebase_config;
+        }
+
+        if (!firebaseConfig || !firebaseConfig.apiKey) {
+          isLocalFallback = true;
+          state.currentUser.uid = generateId('local_u');
+          updateConnectionBadge('local', 'Local Session Mode');
+          render();
+          handlePendingInviteParam();
+          return;
+        }
+
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        // Authenticate BEFORE any Firestore queries.
+        // Use Anonymous Auth when connected to a custom Firebase project so Canvas tokens don't conflict.
+        if (!CUSTOM_FIREBASE_CONFIG && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+
+        fbUser = auth.currentUser;
+        if (!fbUser) {
+          await new Promise((resolve) => {
+            const unsub = onAuthStateChanged(auth, (u) => {
+              if (u) {
+                fbUser = u;
+                unsub();
+                resolve();
+              }
+            });
+          });
+        }
+
+        state.currentUser.uid = fbUser.uid;
+        updateConnectionBadge('ok', 'Live Sync Ready');
+
+        await loadUserPreferencesFromStore();
+        subscribeOpenRooms();
+        subscribeMatchHistory();
+        subscribeSavedMatches();
+        render();
+        handlePendingInviteParam();
+      } catch (err) {
+        console.error('Firebase initialization failed, falling back to local session:', err);
+        isLocalFallback = true;
+        state.currentUser.uid = state.currentUser.uid || generateId('local_u');
+        if (err?.code === 'auth/operation-not-allowed' || err?.code === 'auth/admin-restricted-operation') {
+          updateConnectionBadge('warn', 'Enable Anonymous Auth');
+          showToast('Enable Anonymous Sign-In in Firebase Console → Authentication to sync live.', 'warning');
+        } else {
+          updateConnectionBadge('warn', 'Offline Session Mode');
+        }
+        render();
+      }
+    }
+
+    function subscribeOpenRooms() {
+      if (isLocalFallback || !fbUser) return;
+      if (state.openRoomsUnsubscribe) state.openRoomsUnsubscribe();
+
+      state.openRoomsUnsubscribe = onSnapshot(
+        getRoomsCol(),
+        (snap) => {
+          const list = [];
+          snap.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (d && d.status !== 'closed') {
+              list.push(d);
+            }
+          });
+          list.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+          state.openRooms = list;
+          if (state.view === 'landing') {
+            render();
+          }
+        },
+        (err) => {
+          console.error('Error listening to rooms:', err);
+          if (err?.code === 'permission-denied') {
+            updateConnectionBadge('warn', 'Preview Auth Required');
+          }
+        }
+      );
+    }
+
+    function subscribeMatchHistory() {
+      if (isLocalFallback || !fbUser) return;
+      if (state.historyUnsubscribe) state.historyUnsubscribe();
+
+      state.historyUnsubscribe = onSnapshot(
+        getMatchesCol(),
+        (snap) => {
+          const list = [];
+          snap.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (d) list.push(d);
+          });
+          list.sort((a, b) => (b.finishedAt || b.createdAt || 0) - (a.finishedAt || a.createdAt || 0));
+          state.matchHistory = list;
+        },
+        (err) => {
+          console.error('Error listening to match history:', err);
+        }
+      );
+    }
+
+    function subscribeSavedMatches() {
+      if (isLocalFallback || !fbUser) return;
+      if (state.savedMatchesUnsubscribe) state.savedMatchesUnsubscribe();
+
+      state.savedMatchesUnsubscribe = onSnapshot(
+        getSavedMatchesCol(),
+        (snap) => {
+          const list = [];
+          snap.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (d) list.push(d);
+          });
+          list.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+          state.savedMatches = list;
+          if (state.view === 'lobby') {
+            render();
+          }
+        },
+        (err) => {
+          console.error('Error listening to saved matches:', err);
+        }
+      );
+    }
+
+    function subscribeRoom(roomCode) {
+      if (state.roomUnsubscribe) {
+        state.roomUnsubscribe();
+        state.roomUnsubscribe = null;
+      }
+
+      const cleanCode = String(roomCode || '').replace(/\s+/g, '').toUpperCase();
+      state.currentRoomCode = cleanCode;
+      rememberRoomCode(cleanCode);
+
+      if (isLocalFallback) {
+        const localRoom = localStore.rooms[cleanCode];
+        if (!localRoom || localRoom.status === 'closed') {
+          leaveRoomLocal();
+          return;
+        }
+        state.currentRoom = JSON.parse(JSON.stringify(localRoom));
+        state.view = state.currentRoom.activeMatch ? 'match' : 'lobby';
+        render();
+        return;
+      }
+
+      if (!fbUser) return;
+
+      state.roomUnsubscribe = onSnapshot(
+        getRoomDoc(cleanCode),
+        (docSnap) => {
+          if (!docSnap.exists()) {
+            forgetRoomCode(cleanCode);
+            showToast('This room no longer exists.', 'warning');
+            leaveRoomLocal();
+            return;
+          }
+          const data = docSnap.data();
+          if (data.status === 'closed') {
+            forgetRoomCode(cleanCode);
+            showToast(`Room ${cleanCode} was closed by the host.`, 'info');
+            leaveRoomLocal();
+            return;
+          }
+          state.currentRoom = data;
+          state.view = data.activeMatch ? 'match' : 'lobby';
+          render();
+        },
+        (err) => {
+          console.error('Room listener error:', err);
+          showToast('Lost connection to room. Reconnecting...', 'error');
+        }
+      );
+    }
+
+    function leaveRoomLocal() {
+      if (state.roomUnsubscribe) {
+        state.roomUnsubscribe();
+        state.roomUnsubscribe = null;
+      }
+      state.currentRoomCode = null;
+      state.currentRoom = null;
+      state.view = 'landing';
+      render();
+    }
+
+    // =========================================================================
+    // 6. DATA LAYER (Room, Profile, History & Saved Match CRUD)
+    // =========================================================================
+    async function fetchRoom(code) {
+      const clean = String(code || '').replace(/\s+/g, '').toUpperCase();
+      if (!clean) return null;
+      if (isLocalFallback) {
+        const r = localStore.rooms[clean];
+        return r && r.status !== 'closed' ? JSON.parse(JSON.stringify(r)) : null;
+      }
+      if (!fbUser) return null;
+      const snap = await getDoc(getRoomDoc(clean));
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      return data && data.status !== 'closed' ? data : null;
+    }
+
+    async function saveRoom(roomObj) {
+      const payload = {
+        ...roomObj,
+        updatedAt: Date.now(),
+      };
+      if (isLocalFallback) {
+        localStore.rooms[payload.code] = JSON.parse(JSON.stringify(payload));
+        if (state.currentRoomCode === payload.code) {
+          state.currentRoom = JSON.parse(JSON.stringify(payload));
+          state.view = payload.activeMatch ? 'match' : 'lobby';
+        }
+        state.openRooms = Object.values(localStore.rooms).filter((r) => r.status !== 'closed');
+        render();
+        return;
+      }
+      if (!fbUser) return;
+      await setDoc(getRoomDoc(payload.code), payload);
+    }
+
+    async function fetchProfileById(profileId) {
+      if (!profileId) return null;
+      if (isLocalFallback) {
+        return localStore.profiles[profileId] || null;
+      }
+      if (!fbUser) return null;
+      try {
+        const snap = await getDoc(getProfileDoc(profileId));
+        return snap.exists() ? snap.data() : null;
+      } catch (err) {
+        console.warn('Error reading profile:', err);
+        return null;
+      }
+    }
+
+    async function saveUserProfile(profile) {
+      if (!profile || !profile.profileId) return;
+      const payload = { ...profile, updatedAt: Date.now() };
+      if (isLocalFallback) {
+        localStore.profiles[profile.profileId] = payload;
+        return;
+      }
+      if (!fbUser) return;
+      await setDoc(getProfileDoc(profile.profileId), payload, { merge: true });
+    }
+
+    async function saveMatchRecord(record) {
+      if (isLocalFallback) {
+        localStore.matches[record.matchId] = record;
+        state.matchHistory = Object.values(localStore.matches).sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0));
+        return;
+      }
+      if (!fbUser) return;
+      await setDoc(getMatchDoc(record.matchId), record);
+    }
+
+    async function savePausedMatchRecord(savedObj) {
+      if (isLocalFallback) {
+        localStore.savedMatches[savedObj.savedId] = JSON.parse(JSON.stringify(savedObj));
+        state.savedMatches = Object.values(localStore.savedMatches).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+        return;
+      }
+      if (!fbUser) return;
+      await setDoc(getSavedMatchDoc(savedObj.savedId), savedObj);
+    }
+
+    async function deleteSavedMatchRecord(savedId) {
+      if (!savedId) return;
+      if (isLocalFallback) {
+        delete localStore.savedMatches[savedId];
+        state.savedMatches = Object.values(localStore.savedMatches).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+        render();
+        return;
+      }
+      if (!fbUser) return;
+      await deleteDoc(getSavedMatchDoc(savedId));
+    }
+
+    function getSavedMatchesForCurrentRoom() {
+      const room = state.currentRoom;
+      if (!room) return [];
+      return (state.savedMatches || []).filter(
+        (m) => m.roomCode === room.code || (m.hostUid && m.hostUid === room.hostUid)
+      );
+    }
+
+    // =========================================================================
+    // 7. SCORING & MATCH LIFECYCLE LOGIC
+    // =========================================================================
+    function computePlayerTotals(room) {
+      const totals = {};
+      if (!room) return totals;
+      (room.players || []).forEach((p) => {
+        totals[p.seatId] = 0;
+      });
+      const rounds = room.activeMatch?.rounds || [];
+      rounds.forEach((r) => {
+        Object.entries(r.scores || {}).forEach(([seatId, pts]) => {
+          if (pts === null || pts === undefined) return;
+          const val = Number(pts) || 0;
+          totals[seatId] = (totals[seatId] || 0) + val;
+        });
+      });
+      return totals;
+    }
+
+    function computeStandings(room) {
+      const totals = computePlayerTotals(room);
+      return (room.players || [])
+        .map((p) => ({ ...p, total: totals[p.seatId] || 0 }))
+        .sort((a, b) => b.total - a.total);
+    }
+
+    async function startNewMatchInRoom(game, rulesObj) {
+      if (!state.currentRoom) return;
+      const updated = JSON.parse(JSON.stringify(state.currentRoom));
+      updated.status = 'playing';
+      updated.activeMatch = {
+        matchId: generateId('match'),
+        gameId: game.id,
+        gameName: game.name,
+        rules: { ...game.defaultRules, ...(rulesObj || {}) },
+        rounds: [],
+        startedAt: Date.now(),
+        finishedAt: null,
+        winnerSeatIds: [],
+      };
+      await saveRoom(updated);
+      showToast(`Started ${game.name}!`, 'success');
+    }
+
+    async function finalizeMatch(roomObj) {
+      const standings = computeStandings(roomObj);
+      const topScore = standings.length > 0 ? standings[0].total : 0;
+      const winners = standings.filter((p) => p.total === topScore);
+      const winnerSeatIds = winners.map((w) => w.seatId);
+
+      roomObj.status = 'finished';
+      roomObj.activeMatch.finishedAt = Date.now();
+      roomObj.activeMatch.winnerSeatIds = winnerSeatIds;
+
+      // Save match history record for room participants
+      const participantUids = [...new Set([
+        roomObj.hostUid,
+        ...(roomObj.players || []).map((p) => p.claimedByUid).filter(Boolean),
+      ])];
+      const participantProfileIds = [...new Set(
+        (roomObj.players || []).map((p) => p.profileId).filter(Boolean)
+      )];
+
+      const historyRecord = {
+        matchId: roomObj.activeMatch.matchId || generateId('match'),
+        roomCode: roomObj.code,
+        gameId: roomObj.activeMatch.gameId,
+        gameName: roomObj.activeMatch.gameName,
+        hostUid: roomObj.hostUid,
+        participantUids,
+        participantProfileIds,
+        standings: standings.map((s) => ({
+          seatId: s.seatId,
+          name: s.name,
+          avatar: s.avatar,
+          total: s.total,
+        })),
+        winnerNames: winners.map((w) => w.name),
+        roundCount: (roomObj.activeMatch.rounds || []).length,
+        finishedAt: roomObj.activeMatch.finishedAt,
+      };
+
+      await saveMatchRecord(historyRecord);
+      await saveRoom(roomObj);
+
+      const winLabel = winners.map((w) => w.name).join(' & ');
+      showToast(`🏆 ${winLabel} won ${roomObj.activeMatch.gameName}!`, 'success');
+    }
+
+    async function saveActiveGameForLater() {
+      const room = state.currentRoom;
+      if (!room || !room.activeMatch) return;
+
+      const totals = computePlayerTotals(room);
+      const savedObj = {
+        savedId: generateId('saved'),
+        roomCode: room.code,
+        hostUid: room.hostUid,
+        gameId: room.activeMatch.gameId,
+        gameName: room.activeMatch.gameName,
+        match: JSON.parse(JSON.stringify(room.activeMatch)),
+        playersSnapshot: (room.players || []).map((p) => ({
+          ...p,
+          total: totals[p.seatId] || 0,
+        })),
+        savedAt: Date.now(),
+      };
+
+      await savePausedMatchRecord(savedObj);
+
+      const updated = JSON.parse(JSON.stringify(room));
+      updated.status = 'lobby';
+      updated.activeMatch = null;
+      await saveRoom(updated);
+      showToast(`${savedObj.gameName} saved for later! Resume anytime from the lobby.`, 'success');
+    }
+
+    async function resumeSavedMatch(savedObj) {
+      const room = state.currentRoom;
+      if (!room || !savedObj) return;
+      const updated = JSON.parse(JSON.stringify(room));
+
+      // Merge any missing seats from the saved match back into the room so scores stay intact
+      const existingSeatIds = new Set((updated.players || []).map((p) => p.seatId));
+      (savedObj.playersSnapshot || []).forEach((sp) => {
+        if (!existingSeatIds.has(sp.seatId)) {
+          updated.players.push({
+            seatId: sp.seatId,
+            name: sp.name,
+            avatar: sp.avatar,
+            claimedByUid: sp.claimedByUid || null,
+            profileId: sp.profileId || null,
+          });
+        }
+      });
+
+      updated.status = 'playing';
+      updated.activeMatch = JSON.parse(JSON.stringify(savedObj.match));
+      await saveRoom(updated);
+      await deleteSavedMatchRecord(savedObj.savedId);
+      showToast(`Resumed ${savedObj.gameName}!`, 'success');
+    }
+
+    async function discardActiveGame() {
+      const room = state.currentRoom;
+      if (!room) return;
+      const name = room.activeMatch?.gameName || 'Game';
+      const updated = JSON.parse(JSON.stringify(room));
+      updated.status = 'lobby';
+      updated.activeMatch = null;
+      await saveRoom(updated);
+      showToast(`${name} discarded.`, 'info');
+    }
+
+    async function closeCurrentRoom({ saveActiveFirst = false } = {}) {
+      const room = state.currentRoom;
+      if (!room) return;
+
+      if (saveActiveFirst && room.activeMatch && room.status === 'playing') {
+        const totals = computePlayerTotals(room);
+        await savePausedMatchRecord({
+          savedId: generateId('saved'),
+          roomCode: room.code,
+          hostUid: room.hostUid,
+          gameId: room.activeMatch.gameId,
+          gameName: room.activeMatch.gameName,
+          match: JSON.parse(JSON.stringify(room.activeMatch)),
+          playersSnapshot: (room.players || []).map((p) => ({
+            ...p,
+            total: totals[p.seatId] || 0,
+          })),
+          savedAt: Date.now(),
+        });
+      }
+
+      const updated = JSON.parse(JSON.stringify(room));
+      updated.status = 'closed';
+      updated.activeMatch = null;
+      updated.closedAt = Date.now();
+      await saveRoom(updated);
+      forgetRoomCode(room.code);
+      showToast(
+        saveActiveFirst
+          ? `Game saved & Room ${room.code} closed.`
+          : `Room ${room.code} closed.`,
+        'info'
+      );
+      leaveRoomLocal();
+    }
+
+    async function toggleFavoriteGame(gameId) {
+      const favs = new Set(state.currentUser.favorites || []);
+      if (favs.has(gameId)) {
+        favs.delete(gameId);
+      } else {
+        favs.add(gameId);
+      }
+      state.currentUser.favorites = Array.from(favs);
+      await persistUserPreferences();
+
+      if (state.currentUser.profileId) {
+        await saveUserProfile({
+          profileId: state.currentUser.profileId,
+          name: state.currentUser.name,
+          email: state.currentUser.email,
+          avatar: state.currentUser.avatar,
+          favorites: state.currentUser.favorites,
+        });
+      }
+      render();
+    }
+
+    // =========================================================================
+    // 8. MODAL SYSTEM
+    // =========================================================================
+    function openModal(html, { maxWidth = 'max-w-lg' } = {}) {
+      if (activeModalKeydownHandler) {
+        window.removeEventListener('keydown', activeModalKeydownHandler);
+        activeModalKeydownHandler = null;
+      }
+      const backdrop = document.getElementById('modal-backdrop');
+      const panel = document.getElementById('modal-panel');
+      if (!backdrop || !panel) return;
+      panel.className = `w-full ${maxWidth} rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden my-auto max-h-[92vh] overflow-y-auto`;
+      panel.innerHTML = html;
+      backdrop.classList.remove('hidden');
+      backdrop.classList.add('flex');
+    }
+
+    function closeModal() {
+      if (activeModalKeydownHandler) {
+        window.removeEventListener('keydown', activeModalKeydownHandler);
+        activeModalKeydownHandler = null;
+      }
+      const backdrop = document.getElementById('modal-backdrop');
+      const panel = document.getElementById('modal-panel');
+      if (!backdrop || !panel) return;
+      backdrop.classList.add('hidden');
+      backdrop.classList.remove('flex');
+      panel.innerHTML = '';
+    }
+
+    // =========================================================================
+    // 9. MAIN RENDER ROUTER & HEADER SYNC
+    // =========================================================================
+    function updateHeaderUI() {
+      const roomControls = document.getElementById('header-room-controls');
+      const codeText = document.getElementById('header-room-code-text');
+      const countText = document.getElementById('header-player-count');
+      const profileBtn = document.getElementById('header-profile-btn');
+      const profileEmoji = document.getElementById('header-profile-emoji');
+      const profileName = document.getElementById('header-profile-name');
+      const copyLinkLabel = document.getElementById('header-copy-link-label');
+
+      if (state.currentRoom && state.view !== 'landing') {
+        roomControls.classList.remove('hidden');
+        roomControls.classList.add('flex');
+        codeText.textContent = state.currentRoom.code;
+        countText.textContent = String((state.currentRoom.players || []).length);
+        if (copyLinkLabel) copyLinkLabel.textContent = 'Invite Link';
+      } else {
+        roomControls.classList.add('hidden');
+        roomControls.classList.remove('flex');
+        if (copyLinkLabel) copyLinkLabel.textContent = 'Copy Link';
+      }
+
+      if (state.currentUser.name) {
+        profileBtn.classList.remove('hidden');
+        profileBtn.classList.add('flex');
+        profileEmoji.textContent = getAvatarObj(state.currentUser.avatar).emoji;
+        profileName.textContent = state.currentUser.name;
+      } else {
+        profileBtn.classList.add('hidden');
+        profileBtn.classList.remove('flex');
+      }
+    }
+
+    function render() {
+      updateHeaderUI();
+      const main = document.getElementById('app-main');
+      if (!main) return;
+
+      if (state.view === 'lobby' && state.currentRoom) {
+        renderLobbyView(main);
+      } else if (state.view === 'match' && state.currentRoom && state.currentRoom.activeMatch) {
+        renderMatchView(main);
+      } else {
+        renderLandingView(main);
+      }
+    }
+
+    // =========================================================================
+    // 9A. VIEW: LANDING (Create Room, Join by Code, Conditional Rejoin Room)
+    // =========================================================================
+    function renderLandingView(container) {
+      const rejoinRooms = getRejoinableRooms();
+
+      const rejoinSectionHtml = rejoinRooms.length === 0
+        ? ''
+        : `
+          <!-- Rejoin Room (only shown for active rooms you were already part of) -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Rejoin Room</h3>
+                <p class="text-[11px] text-slate-400 dark:text-slate-500">Jump back into an active table you were already part of</p>
+              </div>
+              <span class="text-xs text-slate-400 dark:text-slate-500">${rejoinRooms.length} active</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              ${rejoinRooms.map((r) => {
+                const pCount = (r.players || []).length;
+                const hostPlayer = (r.players || []).find((p) => p.claimedByUid === r.hostUid) || (r.players || [])[0];
+                const statusText = r.status === 'playing' && r.activeMatch
+                  ? `Playing ${r.activeMatch.gameName}`
+                  : r.status === 'finished' && r.activeMatch
+                    ? `Finished ${r.activeMatch.gameName}`
+                    : 'In Lobby';
+
+                return `
+                  <button data-join-open-code="${escapeHtml(r.code)}" class="join-open-room-btn text-left p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 shadow-sm hover:shadow-soft transition flex items-center justify-between gap-3">
+                    <div class="min-w-0 space-y-1">
+                      <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-extrabold text-xs tracking-widest">${escapeHtml(r.code)}</span>
+                        <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">${escapeHtml(statusText)}</span>
+                      </div>
+                      <div class="text-sm font-bold text-slate-900 dark:text-white truncate">
+                        Host: ${escapeHtml(hostPlayer?.name || 'Table Host')}
+                      </div>
+                      <div class="text-[11px] text-slate-400 dark:text-slate-500">
+                        ${pCount} ${pCount === 1 ? 'player' : 'players'} seated
+                      </div>
+                    </div>
+                    <span class="px-3.5 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs shrink-0">Rejoin →</span>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+
+      container.innerHTML = `
+        <div class="space-y-8 max-w-3xl mx-auto">
+          <!-- Hero Intro -->
+          <div class="text-center space-y-3 pt-3">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
+              ✨ Real-Time Shared Scorepad
+            </span>
+            <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+              Scoreboard for Game Night
+            </h1>
+            <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
+              Ditch the scrap paper and mental math. Start a room, share a 4-letter code, and track every round together live.
+            </p>
+          </div>
+
+          <!-- Primary Create / Join Action Cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Create Room Card -->
+            <div class="p-6 rounded-3xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-soft flex flex-col justify-between gap-5">
+              <div class="space-y-2">
+                <div class="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center text-2xl">🏠</div>
+                <h2 class="text-xl font-extrabold">Create a Room</h2>
+                <p class="text-xs sm:text-sm text-indigo-100 leading-relaxed">
+                  Become the host, generate a 4-character room code, seat your players, and choose the game.
+                </p>
+              </div>
+              <button id="landing-create-room-btn" class="w-full py-3.5 px-5 rounded-2xl bg-white text-indigo-700 hover:bg-indigo-50 active:scale-[0.99] font-extrabold text-sm shadow-sm transition">
+                Create New Room →
+              </button>
+            </div>
+
+            <!-- Join Room Card -->
+            <div class="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-soft flex flex-col justify-between gap-5">
+              <div class="space-y-2">
+                <div class="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-2xl">🎟️</div>
+                <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Join a Room</h2>
+                <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Have a 4-character code from the host? Jump in and claim your seat or add yourself.
+                </p>
+              </div>
+              <form id="landing-join-form" class="flex items-center gap-2">
+                <input
+                  id="landing-room-code-input"
+                  type="text"
+                  maxlength="6"
+                  autocomplete="off"
+                  placeholder="ABCD"
+                  class="flex-1 min-w-0 px-4 py-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center font-extrabold text-base uppercase tracking-[0.25em] placeholder:tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button type="submit" class="px-5 py-3.5 rounded-2xl bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white font-bold text-sm transition shrink-0">
+                  Join
+                </button>
+              </form>
+            </div>
+          </div>
+
+          ${rejoinSectionHtml}
+        </div>
+      `;
+
+      document.getElementById('landing-create-room-btn').addEventListener('click', () => {
+        openJoinOrCreateIdentityModal({ mode: 'create' });
+      });
+
+      document.getElementById('landing-join-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const code = document.getElementById('landing-room-code-input').value.replace(/\s+/g, '').toUpperCase();
+        if (code.length !== 4) {
+          showToast('Please enter a 4-character room code.', 'warning');
+          return;
+        }
+        await initiateJoinRoomFlow(code);
+      });
+
+      container.querySelectorAll('.join-open-room-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const code = btn.getAttribute('data-join-open-code');
+          if (code) await initiateJoinRoomFlow(code);
+        });
+      });
+    }
+
+    async function initiateJoinRoomFlow(code) {
+      const cleanCode = String(code || '').replace(/\s+/g, '').toUpperCase();
+      try {
+        const room = await fetchRoom(cleanCode);
+        if (!room) {
+          forgetRoomCode(cleanCode);
+          showToast(`Room "${cleanCode}" wasn't found or has been closed.`, 'error');
+          return;
+        }
+        const alreadyIn = (room.players || []).some(
+          (p) =>
+            (state.currentUser.uid && p.claimedByUid === state.currentUser.uid) ||
+            (state.currentUser.profileId && p.profileId && p.profileId === state.currentUser.profileId)
+        );
+        if (alreadyIn) {
+          subscribeRoom(room.code);
+          showToast(`Rejoined room ${room.code}!`, 'success');
+          return;
+        }
+        openJoinOrCreateIdentityModal({ mode: 'join', targetRoom: room });
+      } catch (err) {
+        console.error('Failed joining room:', err);
+        if (err?.code === 'permission-denied') {
+          showToast('Preview database denied access in this session (Incognito needs a signed-in preview or your own Firebase config).', 'error');
+        } else {
+          showToast(`Could not connect to room (${err?.code || 'network error'}). Please try again.`, 'error');
+        }
+      }
+    }
+
+    // =========================================================================
+    // 9B. VIEW: ROOM LOBBY (Players, Invite Link, Saved Games & Game Catalog)
+    // =========================================================================
+    function renderLobbyView(container) {
+      const room = state.currentRoom;
+      const host = isHost(room);
+      const players = room.players || [];
+      const savedList = getSavedMatchesForCurrentRoom();
+      const favSet = new Set(state.currentUser.favorites || []);
+      const q = (state.searchQuery || '').trim().toLowerCase();
+
+      const filteredGames = GAME_CATALOG.filter((g) => {
+        if (!q) return true;
+        return (
+          g.name.toLowerCase().includes(q) ||
+          g.category.toLowerCase().includes(q) ||
+          g.tagline.toLowerCase().includes(q)
+        );
+      });
+
+      const favoriteGames = filteredGames.filter((g) => favSet.has(g.id));
+
+      const renderGameCard = (game) => {
+        const isFav = favSet.has(game.id);
+        return `
+          <div class="group relative rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 shadow-sm hover:shadow-soft transition overflow-hidden flex flex-col">
+            <!-- Thumbnail Art Banner -->
+            <button data-open-game="${escapeHtml(game.id)}" class="open-game-card-btn text-left w-full">
+              <div class="h-32 sm:h-36 bg-gradient-to-br ${game.gradient} p-4 flex flex-col justify-between relative overflow-hidden">
+                <div class="flex items-center justify-between">
+                  <span class="px-2.5 py-1 rounded-xl bg-black/25 backdrop-blur-sm text-white text-[11px] font-bold">
+                    ${escapeHtml(game.category)}
+                  </span>
+                  <span class="px-2.5 py-1 rounded-xl bg-white/20 backdrop-blur-sm text-white text-[11px] font-bold">
+                    ${escapeHtml(game.playersLabel)}
+                  </span>
+                </div>
+                <div class="flex items-end justify-between">
+                  <div class="text-white font-extrabold text-xl tracking-tight drop-shadow-sm">${escapeHtml(game.name)}</div>
+                  <div class="text-4xl drop-shadow-md group-hover:scale-110 transition-transform">${game.emoji}</div>
+                </div>
+              </div>
+              <div class="p-4 pb-3 space-y-1">
+                <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">${escapeHtml(game.tagline)}</p>
+              </div>
+            </button>
+
+            <!-- Footer Actions -->
+            <div class="px-4 pb-4 pt-1 mt-auto flex items-center justify-between gap-2">
+              <button data-open-game="${escapeHtml(game.id)}" class="open-game-card-btn flex-1 py-2 px-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 text-indigo-700 dark:text-indigo-300 font-bold text-xs transition">
+                ${host ? 'Select / Rules / History' : 'View Rules & History'}
+              </button>
+              <button
+                data-fav-game="${escapeHtml(game.id)}"
+                title="${isFav ? 'Remove from Favorites' : 'Add to Favorites'}"
+                class="toggle-fav-btn w-9 h-9 rounded-xl border ${
+                  isFav
+                    ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-500'
+                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-amber-500'
+                } flex items-center justify-center text-base transition"
+              >
+                ${isFav ? '★' : '☆'}
+              </button>
+            </div>
+          </div>
+        `;
+      };
+
+      container.innerHTML = `
+        <div class="space-y-6">
+          <!-- Room Invite Banner -->
+          <section class="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="flex items-center gap-3.5 min-w-0">
+              <div class="px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-center shrink-0 shadow-sm">
+                <div class="text-[10px] font-bold uppercase tracking-widest opacity-80">Code</div>
+                <div class="text-xl font-black tracking-[0.2em] leading-none mt-0.5">${escapeHtml(room.code)}</div>
+              </div>
+              <div class="min-w-0">
+                <h1 class="text-lg font-extrabold text-slate-900 dark:text-white truncate">Game Room Lobby</h1>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                  Share the invite link or 4-letter code so friends can join on their phones.
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap shrink-0">
+              <button id="lobby-copy-link-btn" class="px-3.5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-sm active:scale-95 transition flex items-center gap-1.5">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                </svg>
+                <span>Copy Invite Link</span>
+              </button>
+              <button id="lobby-settings-btn" class="px-3.5 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition">
+                ⚙️ Settings
+              </button>
+              ${host ? `
+                <button id="lobby-close-room-btn" class="px-3.5 py-2.5 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 font-bold text-xs transition">
+                  Close Room
+                </button>
+              ` : `
+                <button id="lobby-leave-room-btn" class="px-3.5 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs transition">
+                  Leave
+                </button>
+              `}
+            </div>
+          </section>
+
+          <!-- Seated Players Panel -->
+          <section class="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <h2 class="text-sm font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Seated Players (${players.length})
+                </h2>
+                <p class="text-xs text-slate-400 dark:text-slate-500">
+                  ${host ? 'Add extra seats for people without phones—they can claim their seat later if they join.' : 'Waiting for the host to pick a game.'}
+                </p>
+              </div>
+              ${host ? `
+                <button id="lobby-add-seat-btn" class="px-3.5 py-2 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs transition">
+                  ＋ Add Seat
+                </button>
+              ` : ''}
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              ${players.map((p) => {
+                const av = getAvatarObj(p.avatar);
+                const isRoomHost = p.claimedByUid && p.claimedByUid === room.hostUid;
+                const isMe = p.claimedByUid && p.claimedByUid === state.currentUser.uid;
+                const isClaimed = Boolean(p.claimedByUid);
+                return `
+                  <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border ${isMe ? 'border-indigo-400 dark:border-indigo-500' : 'border-slate-200/80 dark:border-slate-700/80'} flex items-center justify-between gap-2.5">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${av.color}">${av.emoji}</span>
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(p.name)}</span>
+                          ${isMe ? '<span class="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">(You)</span>' : ''}
+                        </div>
+                        <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          ${isRoomHost ? '<span class="px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 text-[10px] font-bold">HOST</span>' : ''}
+                          <span class="text-[11px] font-medium ${isClaimed ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">
+                            ${isClaimed ? '● Connected' : '○ Open Seat'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    ${host && !isRoomHost ? `
+                      <button data-remove-seat="${escapeHtml(p.seatId)}" title="Remove Seat" class="remove-seat-btn w-8 h-8 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 flex items-center justify-center text-xs font-bold transition shrink-0">
+                        ✕
+                      </button>
+                    ` : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </section>
+
+          <!-- Saved Games (Resume Later) -->
+          ${savedList.length > 0 ? `
+            <section class="p-4 sm:p-5 rounded-3xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200/90 dark:border-amber-800/70 space-y-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-sm font-extrabold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                    💾 Saved Games (${savedList.length})
+                  </h2>
+                  <p class="text-xs text-amber-700/80 dark:text-amber-300/70">Pick up right where you left off</p>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                ${savedList.map((sm) => `
+                  <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-amber-200/80 dark:border-amber-800/60 flex flex-col justify-between gap-3">
+                    <div class="space-y-1">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="font-extrabold text-sm text-slate-900 dark:text-white">${escapeHtml(sm.gameName)}</span>
+                        <span class="text-[11px] font-semibold text-slate-400">${formatShortDate(sm.savedAt)}</span>
+                      </div>
+                      <div class="text-xs text-slate-500 dark:text-slate-400">
+                        ${(sm.match?.rounds || []).length} rounds · ${(sm.playersSnapshot || []).map((p) => `${escapeHtml(p.name)}: ${p.total}`).join(', ')}
+                      </div>
+                    </div>
+                    ${host ? `
+                      <div class="flex items-center gap-2">
+                        <button data-resume-saved="${escapeHtml(sm.savedId)}" class="resume-saved-btn flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition">
+                          Resume Game →
+                        </button>
+                        <button data-discard-saved="${escapeHtml(sm.savedId)}" class="discard-saved-btn py-2 px-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 text-rose-600 dark:text-rose-400 font-bold text-xs transition">
+                          Discard
+                        </button>
+                      </div>
+                    ` : `
+                      <div class="text-[11px] font-semibold text-slate-400">Only the host can resume saved games.</div>
+                    `}
+                  </div>
+                `).join('')}
+              </div>
+            </section>
+          ` : ''}
+
+          <!-- Game Selection Library -->
+          <section class="space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">Choose a Game</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                  Tap any game to start a match, view editable rules, or browse table history.
+                </p>
+              </div>
+              <div class="relative w-full sm:w-64">
+                <input
+                  id="lobby-game-search"
+                  type="text"
+                  value="${escapeHtml(state.searchQuery)}"
+                  placeholder="Search games..."
+                  class="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </div>
+            </div>
+
+            <!-- Favorites Shelf -->
+            ${favoriteGames.length > 0 ? `
+              <div class="space-y-2.5">
+                <div class="text-xs font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400">★ Favorites</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  ${favoriteGames.map(renderGameCard).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- All Games Grid -->
+            <div class="space-y-2.5">
+              ${favoriteGames.length > 0 ? '<div class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">All Games</div>' : ''}
+              ${filteredGames.length === 0 ? `
+                <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-sm text-slate-400">
+                  No games matched "${escapeHtml(state.searchQuery)}".
+                </div>
+              ` : `
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  ${filteredGames.map(renderGameCard).join('')}
+                </div>
+              `}
+            </div>
+          </section>
+        </div>
+      `;
+
+      // Lobby Event Bindings
+      document.getElementById('lobby-copy-link-btn').addEventListener('click', () => {
+        handleQuickCopyAppLink(true);
+      });
+
+      document.getElementById('lobby-settings-btn').addEventListener('click', () => {
+        openRoomSettingsModal();
+      });
+
+      const closeRoomBtn = document.getElementById('lobby-close-room-btn');
+      if (closeRoomBtn) {
+        closeRoomBtn.addEventListener('click', () => openCloseRoomConfirmModal());
+      }
+
+      const leaveRoomBtn = document.getElementById('lobby-leave-room-btn');
+      if (leaveRoomBtn) {
+        leaveRoomBtn.addEventListener('click', () => {
+          showToast(`Left room ${room.code}.`, 'info');
+          leaveRoomLocal();
+        });
+      }
+
+      const addSeatBtn = document.getElementById('lobby-add-seat-btn');
+      if (addSeatBtn) {
+        addSeatBtn.addEventListener('click', () => openAddSeatModal());
+      }
+
+      container.querySelectorAll('.remove-seat-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const sid = btn.getAttribute('data-remove-seat');
+          const updated = JSON.parse(JSON.stringify(state.currentRoom));
+          updated.players = (updated.players || []).filter((p) => p.seatId !== sid);
+          await saveRoom(updated);
+          showToast('Seat removed.', 'info');
+        });
+      });
+
+      container.querySelectorAll('.resume-saved-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const sid = btn.getAttribute('data-resume-saved');
+          const target = savedList.find((x) => x.savedId === sid);
+          if (target) await resumeSavedMatch(target);
+        });
+      });
+
+      container.querySelectorAll('.discard-saved-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const sid = btn.getAttribute('data-discard-saved');
+          const target = savedList.find((x) => x.savedId === sid);
+          if (target) {
+            openTwoStepDiscardConfirmModal({
+              title: `Discard Saved ${target.gameName}?`,
+              subtitle: `This permanently deletes the ${(target.match?.rounds || []).length} logged rounds saved on ${formatShortDate(target.savedAt)}.`,
+              onConfirm: async () => {
+                await deleteSavedMatchRecord(target.savedId);
+                showToast(`Saved ${target.gameName} discarded.`, 'info');
+              },
+            });
+          }
+        });
+      });
+
+      const searchInp = document.getElementById('lobby-game-search');
+      if (searchInp) {
+        searchInp.addEventListener('input', (e) => {
+          const pos = e.target.selectionStart;
+          state.searchQuery = e.target.value;
+          render();
+          const newInp = document.getElementById('lobby-game-search');
+          if (newInp) {
+            newInp.focus();
+            newInp.setSelectionRange(pos, pos);
+          }
+        });
+      }
+
+      container.querySelectorAll('.open-game-card-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const gid = btn.getAttribute('data-open-game');
+          const game = GAME_CATALOG.find((g) => g.id === gid);
+          if (game) openGameDetailModal(game);
+        });
+      });
+
+      container.querySelectorAll('.toggle-fav-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const gid = btn.getAttribute('data-fav-game');
+          if (gid) toggleFavoriteGame(gid);
+        });
+      });
+    }
+
+    // =========================================================================
+    // 9C. VIEW: ACTIVE / FINISHED MATCH SCOREBOARD
+    // =========================================================================
+    function renderMatchView(container) {
+      const room = state.currentRoom;
+      const match = room.activeMatch;
+      const game = GAME_CATALOG.find((g) => g.id === match.gameId);
+      const host = isHost(room);
+      const canScore = canCurrentUserScore(room);
+      const isFinished = room.status === 'finished';
+      const isGin = match.gameId === 'gin-rummy';
+      const isScrabble = match.gameId === 'scrabble';
+
+      const players = room.players || [];
+      const rounds = match.rounds || [];
+      const standings = computeStandings(room);
+      const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+      const targetScore = isGin ? (match.rules?.targetScore || 100) : null;
+      const winnerSet = new Set(match.winnerSeatIds || []);
+
+      // Collaborative round progress detection
+      const mySeat = players.find((p) => p.claimedByUid && p.claimedByUid === state.currentUser.uid) || null;
+      const lastStandardRound = lastRound && lastRound.type === 'standard' ? lastRound : null;
+      const lastRoundNumber = rounds.length;
+      const pendingSeatsOnLastRound = lastStandardRound
+        ? players.filter((p) => lastStandardRound.scores?.[p.seatId] === null || lastStandardRound.scores?.[p.seatId] === undefined)
+        : [];
+      const currentUserPendingLastRound = Boolean(
+        !isFinished &&
+        lastStandardRound &&
+        mySeat &&
+        (lastStandardRound.scores?.[mySeat.seatId] === null || lastStandardRound.scores?.[mySeat.seatId] === undefined)
+      );
+      const displayRoundNum = lastStandardRound && pendingSeatsOnLastRound.length > 0 ? lastRoundNumber : rounds.length + 1;
+
+      const ruleBadgeText = isGin
+        ? `Playing to ${targetScore} pts`
+        : match.rules?.doubleTileTransfer
+          ? 'No cap · 2× OUT Tile Transfer'
+          : 'No cap · Tap OUT when tiles run out';
+
+      const winnerNames = standings.filter((s) => winnerSet.has(s.seatId)).map((s) => s.name);
+
+      container.innerHTML = `
+        <div class="space-y-5">
+          <!-- Match Header -->
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(match.gameName)}</h1>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                  isFinished
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
+                }">
+                  ${isFinished ? 'Finished' : `Round ${displayRoundNum}`}
+                </span>
+              </div>
+              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(ruleBadgeText)}</p>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+              <button id="match-rules-btn" class="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 text-xs font-bold transition">
+                Rules
+              </button>
+              ${host && !isFinished ? `
+                <button id="match-edit-rules-btn" class="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 text-xs font-bold transition">
+                  Edit Rules
+                </button>
+                <button id="match-close-game-btn" class="px-3.5 py-2 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-bold transition">
+                  Close Game
+                </button>
+              ` : ''}
+              ${host && isFinished ? `
+                <button id="match-back-lobby-btn" class="px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold transition">
+                  ← Lobby
+                </button>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Winner Banner (when finished) -->
+          ${isFinished ? `
+            <div class="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-white shadow-soft flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div class="space-y-1">
+                <div class="text-xs font-extrabold uppercase tracking-widest opacity-90">🏆 Match Complete</div>
+                <div class="text-2xl font-black">${escapeHtml(winnerNames.join(' & ') || 'Winner')} Wins!</div>
+                <p class="text-xs sm:text-sm text-amber-50">Final results have been saved to your table’s match history.</p>
+              </div>
+              ${host ? `
+                <div class="flex items-center gap-2 shrink-0">
+                  <button id="match-play-again-btn" class="px-4 py-2.5 rounded-2xl bg-white text-slate-900 hover:bg-amber-50 font-extrabold text-xs shadow-sm transition">
+                    Play Again
+                  </button>
+                  <button id="match-lobby-after-win-btn" class="px-4 py-2.5 rounded-2xl bg-black/20 hover:bg-black/30 text-white font-bold text-xs transition">
+                    Choose New Game
+                  </button>
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
+
+          <!-- Live Standings Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            ${standings.map((p, idx) => {
+              const av = getAvatarObj(p.avatar);
+              const isWinner = isFinished && winnerSet.has(p.seatId);
+              const isLeader = !isFinished && idx === 0 && p.total > 0;
+              const rawLast = lastRound ? lastRound.scores?.[p.seatId] : undefined;
+              const isPendingLast = !isFinished && Boolean(lastStandardRound) && (rawLast === null || rawLast === undefined);
+              const lastDelta = rawLast !== null && rawLast !== undefined ? Number(rawLast) : null;
+              const pct = targetScore ? Math.min(100, Math.max(0, Math.round((p.total / targetScore) * 100))) : null;
+
+              return `
+                <div class="p-4 rounded-3xl bg-white dark:bg-slate-900 border-2 ${
+                  isWinner
+                    ? 'border-amber-400 shadow-soft'
+                    : isLeader
+                      ? 'border-indigo-400 dark:border-indigo-500 shadow-sm'
+                      : 'border-slate-200 dark:border-slate-800'
+                } space-y-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${av.color}">${av.emoji}</span>
+                      <div class="min-w-0">
+                        <div class="font-extrabold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(p.name)}</div>
+                        <div class="text-[11px] font-semibold text-slate-400">
+                          ${isWinner ? '🏆 Winner' : `#${idx + 1} Place`}
+                        </div>
+                      </div>
+                    </div>
+                    ${isPendingLast ? `
+                      <span class="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
+                        Rnd ${lastRoundNumber} Pending
+                      </span>
+                    ` : lastDelta !== null && lastDelta !== 0 ? `
+                      <span class="px-2 py-0.5 rounded-lg text-xs font-extrabold tabular-nums ${
+                        lastDelta > 0
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                      }">
+                        ${lastDelta > 0 ? `+${lastDelta}` : lastDelta}
+                      </span>
+                    ` : ''}
+                  </div>
+
+                  <div class="flex items-baseline justify-between">
+                    <div class="text-3xl font-extrabold tabular-nums text-slate-900 dark:text-white">${p.total}</div>
+                    ${targetScore ? `<span class="text-xs font-semibold text-slate-400">/ ${targetScore}</span>` : '<span class="text-xs font-semibold text-slate-400">pts</span>'}
+                  </div>
+
+                  ${pct !== null ? `
+                    <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-300 ${isWinner ? 'bg-amber-400' : 'bg-indigo-600 dark:bg-indigo-400'}" style="width: ${pct}%"></div>
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <!-- Primary Action Controls (when playing) -->
+          ${!isFinished ? `
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              ${canScore ? `
+                ${currentUserPendingLastRound ? `
+                  <button id="match-log-my-pending-btn" class="flex-1 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-soft transition flex items-center justify-center gap-2">
+                    <span>＋ Log Your Round ${lastRoundNumber} Score</span>
+                  </button>
+                  <button id="match-log-round-btn" class="py-4 px-5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold text-sm transition flex items-center justify-center gap-2">
+                    <span>Start Round ${rounds.length + 1}</span>
+                  </button>
+                ` : `
+                  <button id="match-log-round-btn" class="flex-1 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-soft transition flex items-center justify-center gap-2">
+                    <span>＋ Log Round ${rounds.length + 1}</span>
+                  </button>
+                  ${pendingSeatsOnLastRound.length > 0 ? `
+                    <button id="match-fill-pending-btn" class="py-4 px-5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-sm transition flex items-center justify-center gap-1.5">
+                      <span>✎ Fill Round ${lastRoundNumber} (${pendingSeatsOnLastRound.length} pending)</span>
+                    </button>
+                  ` : ''}
+                `}
+                ${isScrabble ? `
+                  <button id="match-scrabble-out-btn" class="py-4 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-extrabold text-sm sm:text-base shadow-sm transition flex items-center justify-center gap-2">
+                    <span>🏁 OUT (End Game)</span>
+                  </button>
+                ` : ''}
+              ` : `
+                <div class="w-full p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/70 text-center text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Score entry is set to Host Only in Room Settings.
+                </div>
+              `}
+            </div>
+          ` : ''}
+
+          <!-- Round-by-Round Score Sheet -->
+          <section class="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <h2 class="text-sm font-extrabold text-slate-900 dark:text-white">Score Sheet</h2>
+              <span class="text-xs font-semibold text-slate-400">${rounds.length} ${rounds.length === 1 ? 'round' : 'rounds'} logged</span>
+            </div>
+
+            ${rounds.length === 0 ? `
+              <div class="p-8 text-center space-y-1">
+                <div class="text-2xl">📝</div>
+                <div class="font-bold text-sm text-slate-700 dark:text-slate-200">No rounds logged yet</div>
+                <p class="text-xs text-slate-400">Tap “Log Round 1” above to start tallying scores with the number pad.</p>
+              </div>
+            ` : `
+              <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      <th class="py-3 px-4 w-16">Rnd</th>
+                      ${players.map((p) => `
+                        <th class="py-3 px-3 text-right whitespace-nowrap">
+                          <span class="mr-1">${getAvatarObj(p.avatar).emoji}</span>${escapeHtml(p.name)}
+                        </th>
+                      `).join('')}
+                      ${canScore && !isFinished ? '<th class="py-3 px-3 w-12"></th>' : ''}
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
+                    ${rounds.map((r, idx) => {
+                      const isOutRound = r.type === 'scrabble-out';
+                      return `
+                        <tr class="${isOutRound ? 'bg-amber-50/70 dark:bg-amber-950/25' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}">
+                          <td class="py-3 px-4 align-top">
+                            <div class="font-extrabold text-xs ${isOutRound ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}">
+                              ${isOutRound ? 'OUT' : `#${idx + 1}`}
+                            </div>
+                            ${r.note ? `<div class="text-[11px] text-slate-400 max-w-[140px] truncate" title="${escapeHtml(r.note)}">${escapeHtml(r.note)}</div>` : ''}
+                          </td>
+                          ${players.map((p) => {
+                            const rawVal = r.scores?.[p.seatId];
+                            const isUnentered = rawVal === null || rawVal === undefined;
+                            if (isUnentered) {
+                              return `
+                                <td class="py-3 px-3 text-right">
+                                  ${canScore && !isFinished && !isOutRound ? `
+                                    <button data-fill-round="${escapeHtml(r.roundId)}" data-fill-seat="${escapeHtml(p.seatId)}" class="fill-cell-btn px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-950 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 text-xs font-bold transition" title="Tap to enter ${escapeHtml(p.name)}'s score">
+                                      —
+                                    </button>
+                                  ` : '<span class="text-slate-300 dark:text-slate-600 font-bold">—</span>'}
+                                </td>
+                              `;
+                            }
+                            const val = Number(rawVal) || 0;
+                            return `
+                              <td class="py-3 px-3 text-right font-bold tabular-nums ${
+                                val > 0
+                                  ? 'text-slate-900 dark:text-white'
+                                  : val < 0
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-slate-400 dark:text-slate-500'
+                              }">
+                                ${val > 0 && isOutRound ? `+${val}` : val}
+                              </td>
+                            `;
+                          }).join('')}
+                          ${canScore && !isFinished ? `
+                            <td class="py-3 px-3 text-right">
+                              <button data-edit-round="${escapeHtml(r.roundId)}" title="Edit Round" class="edit-round-btn p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 transition">
+                                ✎
+                              </button>
+                            </td>
+                          ` : ''}
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                  <tfoot>
+                    <tr class="bg-slate-50 dark:bg-slate-800/80 border-t-2 border-slate-200 dark:border-slate-700 font-extrabold text-sm">
+                      <td class="py-3 px-4 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Total</td>
+                      ${players.map((p) => {
+                        const tot = computePlayerTotals(room)[p.seatId] || 0;
+                        return `<td class="py-3 px-3 text-right tabular-nums text-indigo-700 dark:text-indigo-300">${tot}</td>`;
+                      }).join('')}
+                      ${canScore && !isFinished ? '<td></td>' : ''}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            `}
+          </section>
+        </div>
+      `;
+
+      // Match Bindings
+      document.getElementById('match-rules-btn').addEventListener('click', () => {
+        if (game) openRulesInfoModal(game, match.rules);
+      });
+
+      const editRulesBtn = document.getElementById('match-edit-rules-btn');
+      if (editRulesBtn && game) {
+        editRulesBtn.addEventListener('click', () => openGameRulesSetupModal(game, { editingActiveMatch: true }));
+      }
+
+      const backLobbyBtn = document.getElementById('match-back-lobby-btn');
+      if (backLobbyBtn) {
+        backLobbyBtn.addEventListener('click', async () => {
+          const updated = { ...state.currentRoom, status: 'lobby', activeMatch: null };
+          await saveRoom(updated);
+        });
+      }
+
+      const closeGameBtn = document.getElementById('match-close-game-btn');
+      if (closeGameBtn) {
+        closeGameBtn.addEventListener('click', () => openCloseGameModal());
+      }
+
+      const playAgainBtn = document.getElementById('match-play-again-btn');
+      if (playAgainBtn && game) {
+        playAgainBtn.addEventListener('click', async () => {
+          await startNewMatchInRoom(game, match.rules);
+        });
+      }
+
+      const lobbyAfterWinBtn = document.getElementById('match-lobby-after-win-btn');
+      if (lobbyAfterWinBtn) {
+        lobbyAfterWinBtn.addEventListener('click', async () => {
+          const updated = { ...state.currentRoom, status: 'lobby', activeMatch: null };
+          await saveRoom(updated);
+        });
+      }
+
+      const logMyPendingBtn = document.getElementById('match-log-my-pending-btn');
+      if (logMyPendingBtn && lastStandardRound && mySeat) {
+        logMyPendingBtn.addEventListener('click', () => openLogRoundModal(lastStandardRound, mySeat.seatId));
+      }
+
+      const fillPendingBtn = document.getElementById('match-fill-pending-btn');
+      if (fillPendingBtn && lastStandardRound && pendingSeatsOnLastRound.length > 0) {
+        fillPendingBtn.addEventListener('click', () => openLogRoundModal(lastStandardRound, pendingSeatsOnLastRound[0].seatId));
+      }
+
+      const logRoundBtn = document.getElementById('match-log-round-btn');
+      if (logRoundBtn) {
+        logRoundBtn.addEventListener('click', () => openLogRoundModal(null, mySeat?.seatId || null));
+      }
+
+      const scrabbleOutBtn = document.getElementById('match-scrabble-out-btn');
+      if (scrabbleOutBtn) {
+        scrabbleOutBtn.addEventListener('click', () => openScrabbleOutModal());
+      }
+
+      container.querySelectorAll('.fill-cell-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const rid = btn.getAttribute('data-fill-round');
+          const sid = btn.getAttribute('data-fill-seat');
+          const rnd = rounds.find((x) => x.roundId === rid);
+          if (rnd) openLogRoundModal(rnd, sid);
+        });
+      });
+
+      container.querySelectorAll('.edit-round-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const rid = btn.getAttribute('data-edit-round');
+          const rnd = rounds.find((x) => x.roundId === rid);
+          if (rnd) openLogRoundModal(rnd, mySeat?.seatId || null);
+        });
+      });
+    }
+
+    // =========================================================================
+    // 10. REUSABLE COMPONENTS (NUMBER PAD & SEARCHABLE EMOJI PICKER)
+    // =========================================================================
+    function buildNumberPadHtml({ nextLabel = 'Next ↵', allowMathOps = true } = {}) {
+      const btnBase = 'h-12 sm:h-13 rounded-2xl font-extrabold text-lg select-none active:scale-95 transition flex items-center justify-center';
+      const digitBtn = `${btnBase} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm`;
+      const opBtn = `${btnBase} bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/70`;
+      const utilBtn = `${btnBase} bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 text-sm`;
+
+      return `
+        <div class="grid grid-cols-4 gap-2 p-2.5 rounded-3xl bg-slate-100/80 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800">
+          <button type="button" data-np="7" class="np-key ${digitBtn}">7</button>
+          <button type="button" data-np="8" class="np-key ${digitBtn}">8</button>
+          <button type="button" data-np="9" class="np-key ${digitBtn}">9</button>
+          <button type="button" data-np="BACK" class="np-key ${utilBtn}" aria-label="Backspace">⌫</button>
+
+          <button type="button" data-np="4" class="np-key ${digitBtn}">4</button>
+          <button type="button" data-np="5" class="np-key ${digitBtn}">5</button>
+          <button type="button" data-np="6" class="np-key ${digitBtn}">6</button>
+          ${allowMathOps
+            ? `<button type="button" data-np="+" class="np-key ${opBtn}">+</button>`
+            : `<button type="button" data-np="CLEAR" class="np-key ${utilBtn}">C</button>`
+          }
+
+          <button type="button" data-np="1" class="np-key ${digitBtn}">1</button>
+          <button type="button" data-np="2" class="np-key ${digitBtn}">2</button>
+          <button type="button" data-np="3" class="np-key ${digitBtn}">3</button>
+          ${allowMathOps
+            ? `<button type="button" data-np="−" class="np-key ${opBtn}">−</button>`
+            : `<button type="button" data-np="00" class="np-key ${utilBtn}">00</button>`
+          }
+
+          <button type="button" data-np="CLEAR" class="np-key ${utilBtn}">C</button>
+          <button type="button" data-np="0" class="np-key ${digitBtn}">0</button>
+          ${allowMathOps
+            ? `<button type="button" data-np="×" class="np-key ${opBtn}">×</button>`
+            : `<button type="button" data-np="+" class="np-key ${opBtn}">+</button>`
+          }
+          <button type="button" data-np="NEXT" class="np-key ${btnBase} bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm shadow-sm">${escapeHtml(nextLabel)}</button>
+        </div>
+      `;
+    }
+
+    function applyNumberPadKey(currentExpr, key) {
+      let expr = String(currentExpr || '');
+      if (key === 'CLEAR') return '';
+      if (key === 'BACK') return expr.slice(0, -1);
+
+      const isOp = key === '+' || key === '−' || key === '×';
+      if (isOp) {
+        if (!expr) {
+          return key === '−' ? '−' : '';
+        }
+        const last = expr.slice(-1);
+        if (last === '+' || last === '−' || last === '×') {
+          return expr.slice(0, -1) + key;
+        }
+        return expr + key;
+      }
+
+      if (expr.length >= 24) return expr;
+      return expr + key;
+    }
+
+    function buildEmojiPickerHtml(selectedAvatarIdOrEmoji, prefix = 'ep') {
+      const current = getAvatarObj(selectedAvatarIdOrEmoji);
+      const cats = ['All', 'Games', 'Animals', 'Faces', 'Food', 'Nature', 'Objects'];
+
+      return `
+        <div id="${prefix}-picker" class="space-y-2.5">
+          <div class="flex items-center justify-between gap-2">
+            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">Pick Your Game Piece</label>
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800/70">
+              <span id="${prefix}-selected-preview" class="text-lg leading-none">${current.emoji}</span>
+              <span class="text-[11px] font-bold text-indigo-700 dark:text-indigo-300">Selected</span>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <div class="relative flex-1 min-w-0">
+              <input
+                id="${prefix}-search"
+                type="text"
+                autocomplete="off"
+                placeholder="Search any emoji (dragon, pizza, crown)..."
+                class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <button
+              type="button"
+              id="${prefix}-random-btn"
+              class="px-3.5 py-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs shrink-0 active:scale-95 transition"
+            >
+              🎲 Random
+            </button>
+          </div>
+
+          <div id="${prefix}-cats" class="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            ${cats.map((c, idx) => `
+              <button
+                type="button"
+                data-ep-cat="${c}"
+                class="${prefix}-cat-btn px-2.5 py-1 rounded-xl text-[11px] font-bold shrink-0 transition ${
+                  idx === 0
+                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }"
+              >${c}</button>
+            `).join('')}
+          </div>
+
+          <div id="${prefix}-grid" class="grid grid-cols-6 sm:grid-cols-7 gap-1.5 max-h-40 overflow-y-auto p-1.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80"></div>
+        </div>
+      `;
+    }
+
+    function bindEmojiPickerEvents({ prefix = 'ep', initialValue, onSelect }) {
+      let selectedEmoji = getAvatarObj(initialValue).emoji;
+      let activeCategory = 'All';
+      let query = '';
+
+      const gridEl = document.getElementById(`${prefix}-grid`);
+      const previewEl = document.getElementById(`${prefix}-selected-preview`);
+      const searchEl = document.getElementById(`${prefix}-search`);
+      const randomBtn = document.getElementById(`${prefix}-random-btn`);
+
+      if (!gridEl) return;
+
+      const updateSelection = (emojiStr) => {
+        selectedEmoji = emojiStr;
+        if (previewEl) previewEl.textContent = emojiStr;
+        if (onSelect) onSelect(emojiStr);
+        renderGrid();
+      };
+
+      const renderGrid = () => {
+        const q = query.trim().toLowerCase();
+        const pool = state.emojiCatalog.length > 0 ? state.emojiCatalog : BUILTIN_EMOJI_CATALOG;
+
+        const filtered = pool.filter((item) => {
+          if (q) {
+            return item.emoji === query.trim() || item.name.includes(q);
+          }
+          if (activeCategory !== 'All') {
+            return item.cat === activeCategory;
+          }
+          return true;
+        });
+
+        const capped = filtered.slice(0, 120);
+        const rawTrim = query.trim();
+        const looksLikeEmoji = rawTrim && /\p{Extended_Pictographic}/u.test(rawTrim) && !capped.some((c) => c.emoji === rawTrim);
+
+        let html = '';
+        if (looksLikeEmoji) {
+          html += `
+            <button type="button" data-pick-emoji="${escapeHtml(rawTrim)}" class="${prefix}-emoji-btn col-span-full py-2 px-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border-2 border-indigo-500 text-xs font-bold text-indigo-700 dark:text-indigo-300 flex items-center justify-center gap-2">
+              <span class="text-xl">${escapeHtml(rawTrim)}</span>
+              <span>Use this emoji</span>
+            </button>
+          `;
+        }
+
+        if (capped.length === 0 && !looksLikeEmoji) {
+          html = `<div class="col-span-full py-6 text-center text-xs text-slate-400">No emojis matched "${escapeHtml(query)}". Try another word or paste any emoji!</div>`;
+        } else {
+          html += capped.map((item) => {
+            const isSel = item.emoji === selectedEmoji;
+            return `
+              <button
+                type="button"
+                data-pick-emoji="${escapeHtml(item.emoji)}"
+                title="${escapeHtml(item.name)}"
+                class="${prefix}-emoji-btn h-10 rounded-xl flex items-center justify-center text-xl border-2 transition ${
+                  isSel
+                    ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/70 scale-105'
+                    : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600 hover:bg-white dark:hover:bg-slate-800'
+                }"
+              >
+                ${item.emoji}
+              </button>
+            `;
+          }).join('');
+        }
+
+        if (filtered.length > 120) {
+          html += `<div class="col-span-full pt-1 text-center text-[10px] font-semibold text-slate-400">Showing 120 of ${filtered.length} emojis — type in search to find any emoji!</div>`;
+        }
+
+        gridEl.innerHTML = html;
+
+        gridEl.querySelectorAll(`.${prefix}-emoji-btn`).forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const em = btn.getAttribute('data-pick-emoji');
+            if (em) updateSelection(em);
+          });
+        });
+      };
+
+      if (searchEl) {
+        searchEl.addEventListener('input', (e) => {
+          query = e.target.value;
+          renderGrid();
+        });
+      }
+
+      if (randomBtn) {
+        randomBtn.addEventListener('click', () => {
+          const rand = pickRandomEmoji();
+          updateSelection(rand);
+          showToast(`Random piece picked: ${rand}`, 'info');
+        });
+      }
+
+      document.querySelectorAll(`.${prefix}-cat-btn`).forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activeCategory = btn.getAttribute('data-ep-cat');
+          document.querySelectorAll(`.${prefix}-cat-btn`).forEach((b) => {
+            const act = b.getAttribute('data-ep-cat') === activeCategory;
+            b.className = `${prefix}-cat-btn px-2.5 py-1 rounded-xl text-[11px] font-bold shrink-0 transition ${
+              act
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`;
+          });
+          renderGrid();
+        });
+      });
+
+      renderGrid();
+    }
+
+    // =========================================================================
+    // 11. MODALS (IDENTITY, GAME DETAILS, RULES, LOG ROUND, SCRABBLE OUT, ETC.)
+    // =========================================================================
+
+    // MODAL 1: IDENTITY / SEAT CLAIMING / PROFILE LOGIN
+    function openJoinOrCreateIdentityModal({ mode = 'create', targetRoom = null, profileOnly = false } = {}) {
+      const unclaimedSeats = mode === 'join' && targetRoom
+        ? (targetRoom.players || []).filter((p) => !p.claimedByUid)
+        : [];
+
+      let selectedSeatId = unclaimedSeats.length > 0 ? unclaimedSeats[0].seatId : '__new__';
+      let authTab = state.currentUser.isGuest ? 'guest' : 'email';
+      let nameVal = state.currentUser.name || (selectedSeatId !== '__new__' ? unclaimedSeats[0].name : '');
+      let emailVal = state.currentUser.email || '';
+      let avatarVal = getAvatarObj(state.currentUser.avatar || (selectedSeatId !== '__new__' ? unclaimedSeats[0].avatar : '♟️')).emoji;
+
+      const renderIdentityModal = () => {
+        const title = profileOnly
+          ? 'Your Player Profile'
+          : mode === 'create'
+            ? 'Set Up Your Seat'
+            : `Join Room ${targetRoom?.code || ''}`;
+
+        openModal(`
+          <div class="p-5 sm:p-6 space-y-5">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                  ${profileOnly ? 'Profile & Piece' : mode === 'create' ? 'New Table' : 'Room Entry'}
+                </span>
+                <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(title)}</h2>
+              </div>
+              <button type="button" id="id-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-sm">✕</button>
+            </div>
+
+            ${unclaimedSeats.length > 0 ? `
+              <div class="space-y-2">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Claim a Seat Created by the Host
+                </label>
+                <div class="grid grid-cols-2 gap-2">
+                  ${unclaimedSeats.map((s) => {
+                    const av = getAvatarObj(s.avatar);
+                    const active = selectedSeatId === s.seatId;
+                    return `
+                      <button type="button" data-claim-seat="${escapeHtml(s.seatId)}" class="id-seat-btn p-2.5 rounded-2xl border-2 text-left flex items-center gap-2 transition ${
+                        active
+                          ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                      }">
+                        <span class="text-lg">${av.emoji}</span>
+                        <span class="font-bold text-sm truncate text-slate-900 dark:text-white">${escapeHtml(s.name)}</span>
+                      </button>
+                    `;
+                  }).join('')}
+                  <button type="button" data-claim-seat="__new__" class="id-seat-btn p-2.5 rounded-2xl border-2 text-left flex items-center gap-2 transition ${
+                    selectedSeatId === '__new__'
+                      ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                  }">
+                    <span class="text-lg">➕</span>
+                    <span class="font-bold text-sm text-slate-900 dark:text-white">New Seat</span>
+                  </button>
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- Guest vs Email Profile Switcher -->
+            <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
+              <button type="button" data-auth-tab="guest" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
+                authTab === 'guest'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400'
+              }">
+                Continue as Guest
+              </button>
+              <button type="button" data-auth-tab="email" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
+                authTab === 'email'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400'
+              }">
+                Name &amp; Email Login
+              </button>
+            </div>
+
+            <div class="space-y-3">
+              <div>
+                <label for="id-name-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Display Name</label>
+                <input
+                  id="id-name-input"
+                  type="text"
+                  maxlength="24"
+                  value="${escapeHtml(nameVal)}"
+                  placeholder="e.g., Alex"
+                  class="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              ${authTab === 'email' ? `
+                <div>
+                  <label for="id-email-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Email (for ongoing history &amp; favorites)</label>
+                  <div class="flex gap-2">
+                    <input
+                      id="id-email-input"
+                      type="email"
+                      value="${escapeHtml(emailVal)}"
+                      placeholder="you@example.com"
+                      class="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button type="button" id="id-lookup-email-btn" class="px-3.5 py-2 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs shrink-0 hover:bg-indigo-100 transition">
+                      Load
+                    </button>
+                  </div>
+                </div>
+              ` : ''}
+
+              ${buildEmojiPickerHtml(avatarVal, 'id-ep')}
+            </div>
+
+            <button type="button" id="id-submit-btn" class="w-full py-3.5 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm shadow-sm transition">
+              ${profileOnly ? 'Save Profile' : mode === 'create' ? 'Create Room & Enter →' : selectedSeatId !== '__new__' ? 'Claim Seat & Join →' : 'Join Room →'}
+            </button>
+          </div>
+        `, { maxWidth: 'max-w-md' });
+
+        const captureFields = () => {
+          const nEl = document.getElementById('id-name-input');
+          const eEl = document.getElementById('id-email-input');
+          if (nEl) nameVal = nEl.value;
+          if (eEl) emailVal = eEl.value;
+        };
+
+        document.getElementById('id-close-btn').addEventListener('click', closeModal);
+
+        bindEmojiPickerEvents({
+          prefix: 'id-ep',
+          initialValue: avatarVal,
+          onSelect: (emojiStr) => {
+            avatarVal = emojiStr;
+          },
+        });
+
+        document.querySelectorAll('.id-seat-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            captureFields();
+            selectedSeatId = btn.getAttribute('data-claim-seat');
+            if (selectedSeatId !== '__new__') {
+              const found = unclaimedSeats.find((s) => s.seatId === selectedSeatId);
+              if (found) {
+                if (!nameVal.trim()) nameVal = found.name;
+                avatarVal = getAvatarObj(found.avatar || avatarVal).emoji;
+              }
+            }
+            renderIdentityModal();
+          });
+        });
+
+        document.querySelectorAll('.id-tab-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            captureFields();
+            authTab = btn.getAttribute('data-auth-tab');
+            renderIdentityModal();
+          });
+        });
+
+        const lookupBtn = document.getElementById('id-lookup-email-btn');
+        if (lookupBtn) {
+          lookupBtn.addEventListener('click', async () => {
+            captureFields();
+            const em = emailVal.trim().toLowerCase();
+            if (!em || !em.includes('@')) {
+              showToast('Enter a valid email address first.', 'warning');
+              return;
+            }
+            const pid = normalizeEmailToProfileId(em);
+            const existing = await fetchProfileById(pid);
+            if (existing) {
+              nameVal = existing.name || nameVal;
+              avatarVal = getAvatarObj(existing.avatar || avatarVal).emoji;
+              state.currentUser.favorites = Array.isArray(existing.favorites) ? existing.favorites : [];
+              showToast(`Welcome back, ${nameVal}!`, 'success');
+              renderIdentityModal();
+            } else {
+              showToast('No saved profile yet — we will create one when you continue.', 'info');
+            }
+          });
+        }
+
+        document.getElementById('id-submit-btn').addEventListener('click', async () => {
+          captureFields();
+          const cleanName = nameVal.trim();
+          if (!cleanName) {
+            showToast('Please enter your display name.', 'warning');
+            return;
+          }
+
+          let profileId = null;
+          let cleanEmail = '';
+          const isGuest = authTab === 'guest';
+
+          if (!isGuest) {
+            cleanEmail = emailVal.trim().toLowerCase();
+            if (!cleanEmail || !cleanEmail.includes('@')) {
+              showToast('Please enter a valid email address or switch to Guest.', 'warning');
+              return;
+            }
+            profileId = normalizeEmailToProfileId(cleanEmail);
+            const existing = await fetchProfileById(profileId);
+            const mergedFavs = Array.from(new Set([
+              ...(existing?.favorites || []),
+              ...(state.currentUser.favorites || []),
+            ]));
+            state.currentUser.favorites = mergedFavs;
+            await saveUserProfile({
+              profileId,
+              name: cleanName,
+              email: cleanEmail,
+              avatar: avatarVal,
+              favorites: mergedFavs,
+            });
+          }
+
+          state.currentUser.name = cleanName;
+          state.currentUser.email = cleanEmail;
+          state.currentUser.profileId = profileId;
+          state.currentUser.avatar = avatarVal;
+          state.currentUser.isGuest = isGuest;
+          await persistUserPreferences();
+
+          if (profileOnly) {
+            // Also update the user's seat inside an active room if present
+            if (state.currentRoom) {
+              const updated = JSON.parse(JSON.stringify(state.currentRoom));
+              const mySeat = (updated.players || []).find((p) => p.claimedByUid === state.currentUser.uid);
+              if (mySeat) {
+                mySeat.name = cleanName;
+                mySeat.avatar = avatarVal;
+                mySeat.profileId = profileId;
+                await saveRoom(updated);
+              }
+            }
+            closeModal();
+            updateHeaderUI();
+            showToast('Profile updated!', 'success');
+            return;
+          }
+
+          try {
+            if (mode === 'create') {
+              // Generate a unique 4-character code
+              let code = generateRoomCode();
+              for (let tries = 0; tries < 5; tries++) {
+                const exists = await fetchRoom(code);
+                if (!exists) break;
+                code = generateRoomCode();
+              }
+
+              const newRoom = {
+                code,
+                hostUid: state.currentUser.uid,
+                status: 'lobby',
+                settings: { whoCanScore: 'anyone' },
+                players: [
+                  {
+                    seatId: generateId('seat'),
+                    name: cleanName,
+                    avatar: avatarVal,
+                    claimedByUid: state.currentUser.uid,
+                    profileId,
+                  },
+                ],
+                activeMatch: null,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              };
+
+              await saveRoom(newRoom);
+              closeModal();
+              subscribeRoom(code);
+              showToast(`Room ${code} created! Share the code or invite link.`, 'success');
+            } else if (mode === 'join' && targetRoom) {
+              const freshRoom = (await fetchRoom(targetRoom.code)) || targetRoom;
+              const updated = JSON.parse(JSON.stringify(freshRoom));
+              updated.players = updated.players || [];
+
+              if (selectedSeatId !== '__new__') {
+                const seat = updated.players.find((p) => p.seatId === selectedSeatId);
+                if (seat && !seat.claimedByUid) {
+                  seat.name = cleanName;
+                  seat.avatar = avatarVal;
+                  seat.claimedByUid = state.currentUser.uid;
+                  seat.profileId = profileId;
+                } else {
+                  updated.players.push({
+                    seatId: generateId('seat'),
+                    name: cleanName,
+                    avatar: avatarVal,
+                    claimedByUid: state.currentUser.uid,
+                    profileId,
+                  });
+                }
+              } else {
+                updated.players.push({
+                  seatId: generateId('seat'),
+                  name: cleanName,
+                  avatar: avatarVal,
+                  claimedByUid: state.currentUser.uid,
+                  profileId,
+                });
+              }
+
+              await saveRoom(updated);
+              closeModal();
+              subscribeRoom(updated.code);
+              showToast(`Joined Room ${updated.code}!`, 'success');
+            }
+          } catch (err) {
+            console.error('Error creating/joining room:', err);
+            showToast('Something went wrong saving your seat. Please try again.', 'error');
+          }
+        });
+      };
+
+      renderIdentityModal();
+    }
+
+    // MODAL 2: GAME DETAIL (Start Game, See Rules, See History)
+    function openGameDetailModal(game) {
+      const host = isHost();
+      const isFav = (state.currentUser.favorites || []).includes(game.id);
+
+      openModal(`
+        <div>
+          <div class="h-36 bg-gradient-to-br ${game.gradient} p-5 flex flex-col justify-between text-white relative">
+            <div class="flex items-center justify-between">
+              <span class="px-2.5 py-1 rounded-xl bg-black/25 backdrop-blur-sm text-xs font-bold">${escapeHtml(game.category)}</span>
+              <button id="gd-close-btn" class="w-8 h-8 rounded-xl bg-black/25 hover:bg-black/40 font-bold text-sm">✕</button>
+            </div>
+            <div class="flex items-end justify-between">
+              <div>
+                <h2 class="text-2xl font-black tracking-tight">${escapeHtml(game.name)}</h2>
+                <p class="text-xs text-white/90">${escapeHtml(game.playersLabel)}</p>
+              </div>
+              <div class="text-5xl">${game.emoji}</div>
+            </div>
+          </div>
+
+          <div class="p-5 sm:p-6 space-y-4">
+            <p class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">${escapeHtml(game.tagline)}</p>
+
+            <div class="space-y-2.5">
+              ${host ? `
+                <button id="gd-start-btn" class="w-full py-3.5 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm shadow-sm transition">
+                  ▶ Start Game (Configure Rules)
+                </button>
+              ` : `
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-center text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Only the room host can start a new game.
+                </div>
+              `}
+
+              <div class="grid grid-cols-2 gap-2.5">
+                <button id="gd-rules-btn" class="py-3 px-4 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs sm:text-sm transition">
+                  📖 See Rules
+                </button>
+                <button id="gd-history-btn" class="py-3 px-4 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs sm:text-sm transition">
+                  🏆 See History
+                </button>
+              </div>
+
+              <button id="gd-fav-btn" class="w-full py-2.5 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 transition">
+                ${isFav ? '★ Saved in Your Favorites (Tap to Remove)' : '☆ Add to Your Favorites'}
+              </button>
+            </div>
+          </div>
+        </div>
+      `, { maxWidth: 'max-w-md' });
+
+      document.getElementById('gd-close-btn').addEventListener('click', closeModal);
+
+      const startBtn = document.getElementById('gd-start-btn');
+      if (startBtn) {
+        startBtn.addEventListener('click', () => openGameRulesSetupModal(game));
+      }
+
+      document.getElementById('gd-rules-btn').addEventListener('click', () => {
+        openRulesInfoModal(game, game.defaultRules);
+      });
+
+      document.getElementById('gd-history-btn').addEventListener('click', () => {
+        openGameHistoryModal(game);
+      });
+
+      document.getElementById('gd-fav-btn').addEventListener('click', async () => {
+        await toggleFavoriteGame(game.id);
+        openGameDetailModal(game);
+      });
+    }
+
+    // MODAL 3: EDITABLE GAME RULES SETUP (Before Starting or Mid-Match)
+    function openGameRulesSetupModal(game, { editingActiveMatch = false } = {}) {
+      const currentRules = editingActiveMatch && state.currentRoom?.activeMatch
+        ? { ...game.defaultRules, ...(state.currentRoom.activeMatch.rules || {}) }
+        : { ...game.defaultRules };
+
+      const isGin = game.id === 'gin-rummy';
+      const isScrabble = game.id === 'scrabble';
+
+      openModal(`
+        <div class="p-5 sm:p-6 space-y-5">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                ${editingActiveMatch ? 'Edit Active Rules' : 'Game Setup'}
+              </span>
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(game.name)} Rules</h2>
+            </div>
+            <button id="rs-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+          </div>
+
+          <div class="space-y-4">
+            ${isGin ? `
+              <div>
+                <label for="rs-target-score" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Playing To (Target Points)
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    id="rs-target-score"
+                    type="number"
+                    min="10"
+                    max="10000"
+                    step="10"
+                    value="${currentRules.targetScore}"
+                    class="flex-1 px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-extrabold text-base focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <div class="flex gap-1">
+                    ${[100, 150, 200].map((v) => `
+                      <button type="button" data-preset-target="${v}" class="rs-preset-btn px-3 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-xs font-bold transition">${v}</button>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label for="rs-gin-bonus" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Gin Quick-Bonus</label>
+                  <input id="rs-gin-bonus" type="number" min="0" max="200" value="${currentRules.ginBonus}" class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm" />
+                </div>
+                <div>
+                  <label for="rs-undercut-bonus" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Undercut Quick-Bonus</label>
+                  <input id="rs-undercut-bonus" type="number" min="0" max="200" value="${currentRules.undercutBonus}" class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm" />
+                </div>
+              </div>
+            ` : ''}
+
+            ${isScrabble ? `
+              <div class="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 space-y-1">
+                <div class="text-xs font-extrabold text-amber-800 dark:text-amber-300">Open-Ended Scoring + OUT Endgame</div>
+                <p class="text-xs text-amber-700/90 dark:text-amber-200/80 leading-relaxed">
+                  Scrabble has no maximum point target. Play round by round, then tap <strong>OUT</strong> when a player plays their last tile to transfer remaining rack points and determine the winner.
+                </p>
+              </div>
+
+              <label class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 cursor-pointer">
+                <input id="rs-double-transfer" type="checkbox" ${currentRules.doubleTileTransfer ? 'checked' : ''} class="mt-0.5 w-4 h-4 rounded accent-indigo-600" />
+                <div class="text-xs space-y-0.5">
+                  <div class="font-bold text-slate-900 dark:text-white">Tournament 2× OUT Bonus (Optional)</div>
+                  <div class="text-slate-500 dark:text-slate-400">Off (Classic): subtract remaining tiles from opponents &amp; add 1× to the OUT player. On: add 2× remaining tiles to the OUT player instead of subtracting.</div>
+                </div>
+              </label>
+            ` : ''}
+          </div>
+
+          <div class="flex gap-2.5 pt-1">
+            <button id="rs-cancel-btn" class="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">Cancel</button>
+            <button id="rs-confirm-btn" class="flex-1 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm shadow-sm transition">
+              ${editingActiveMatch ? 'Save Rules' : 'Start Match →'}
+            </button>
+          </div>
+        </div>
+      `, { maxWidth: 'max-w-md' });
+
+      document.getElementById('rs-close-btn').addEventListener('click', closeModal);
+      document.getElementById('rs-cancel-btn').addEventListener('click', closeModal);
+
+      document.querySelectorAll('.rs-preset-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const inp = document.getElementById('rs-target-score');
+          if (inp) inp.value = btn.getAttribute('data-preset-target');
+        });
+      });
+
+      document.getElementById('rs-confirm-btn').addEventListener('click', async () => {
+        let rules = {};
+        if (isGin) {
+          const targetScore = Math.max(10, parseInt(document.getElementById('rs-target-score').value, 10) || 100);
+          const ginBonus = Math.max(0, parseInt(document.getElementById('rs-gin-bonus').value, 10) || 0);
+          const undercutBonus = Math.max(0, parseInt(document.getElementById('rs-undercut-bonus').value, 10) || 0);
+          rules = { targetScore, ginBonus, undercutBonus };
+        } else if (isScrabble) {
+          rules = { doubleTileTransfer: Boolean(document.getElementById('rs-double-transfer').checked) };
+        }
+
+        closeModal();
+
+        if (editingActiveMatch && state.currentRoom?.activeMatch) {
+          const updated = JSON.parse(JSON.stringify(state.currentRoom));
+          updated.activeMatch.rules = rules;
+          await saveRoom(updated);
+          showToast('Match rules updated!', 'success');
+        } else {
+          await startNewMatchInRoom(game, rules);
+        }
+      });
+    }
+
+    // MODAL 4: RULES OVERVIEW
+    function openRulesInfoModal(game, activeRules = null) {
+      const rules = { ...game.defaultRules, ...(activeRules || {}) };
+      openModal(`
+        <div class="p-5 sm:p-6 space-y-4">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <span class="text-2xl">${game.emoji}</span>
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(game.name)} Rules</h2>
+            </div>
+            <button id="ri-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+          </div>
+
+          <div class="p-3.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/70 text-xs font-bold text-indigo-800 dark:text-indigo-200">
+            ${game.id === 'gin-rummy'
+              ? `Current Setting: Playing to ${rules.targetScore} points · Gin +${rules.ginBonus} · Undercut +${rules.undercutBonus}`
+              : `Current Setting: No point cap · ${rules.doubleTileTransfer ? '2× OUT Tile Bonus' : 'Classic OUT Tile Transfer (Subtract & Add)'}`
+            }
+          </div>
+
+          <ul class="space-y-2.5 text-sm text-slate-600 dark:text-slate-300">
+            ${(game.rulesOverview || []).map((line, i) => `
+              <li class="flex items-start gap-2.5">
+                <span class="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center justify-center shrink-0 mt-0.5">${i + 1}</span>
+                <span>${escapeHtml(line)}</span>
+              </li>
+            `).join('')}
+          </ul>
+
+          <button id="ri-done-btn" class="w-full py-3 rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-bold text-sm">Got It</button>
+        </div>
+      `, { maxWidth: 'max-w-md' });
+
+      document.getElementById('ri-close-btn').addEventListener('click', closeModal);
+      document.getElementById('ri-done-btn').addEventListener('click', closeModal);
+    }
+
+    // MODAL 5: GAME HISTORY (Filtered to Host & Seated Players in Room)
+    function openGameHistoryModal(game) {
+      const room = state.currentRoom;
+      const roomUids = new Set([
+        room?.hostUid,
+        ...((room?.players || []).map((p) => p.claimedByUid).filter(Boolean)),
+        state.currentUser.uid,
+      ].filter(Boolean));
+      const roomPids = new Set([
+        ...((room?.players || []).map((p) => p.profileId).filter(Boolean)),
+        state.currentUser.profileId,
+      ].filter(Boolean));
+
+      const relevant = (state.matchHistory || []).filter((m) => {
+        if (m.gameId !== game.id) return false;
+        const uids = m.participantUids || [];
+        const pids = m.participantProfileIds || [];
+        return uids.some((u) => roomUids.has(u)) || pids.some((p) => roomPids.has(p)) || roomUids.has(m.hostUid);
+      });
+
+      openModal(`
+        <div class="p-5 sm:p-6 space-y-4">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Table Match History</span>
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${game.emoji} ${escapeHtml(game.name)}</h2>
+            </div>
+            <button id="gh-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+          </div>
+
+          ${relevant.length === 0 ? `
+            <div class="py-10 text-center space-y-2">
+              <div class="text-3xl">📜</div>
+              <div class="font-bold text-sm text-slate-700 dark:text-slate-200">No logged ${escapeHtml(game.name)} matches yet</div>
+              <p class="text-xs text-slate-400">Completed games played by you or anyone in this room will appear here.</p>
+            </div>
+          ` : `
+            <div class="space-y-2.5 max-h-[55vh] overflow-y-auto pr-0.5">
+              ${relevant.map((m) => `
+                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs font-extrabold text-amber-600 dark:text-amber-400">🏆 ${escapeHtml((m.winnerNames || []).join(' & ') || 'Finished')}</span>
+                    <span class="text-[11px] text-slate-400">${formatShortDate(m.finishedAt)}</span>
+                  </div>
+                  <div class="flex flex-wrap gap-1.5">
+                    ${(m.standings || []).map((s, idx) => `
+                      <span class="px-2 py-1 rounded-xl text-xs font-bold ${
+                        idx === 0
+                          ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                      }">
+                        ${getAvatarObj(s.avatar).emoji} ${escapeHtml(s.name)}: ${s.total}
+                      </span>
+                    `).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+
+          <button id="gh-done-btn" class="w-full py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">Close</button>
+        </div>
+      `, { maxWidth: 'max-w-md' });
+
+      document.getElementById('gh-close-btn').addEventListener('click', closeModal);
+      document.getElementById('gh-done-btn').addEventListener('click', closeModal);
+    }
+
+    // MODAL 6: LOG OR EDIT ROUND (Tactile Number Pad + Smart Collaborative Merge)
+    function openLogRoundModal(existingRound = null, focusSeatId = null) {
+      const room = state.currentRoom;
+      const match = room?.activeMatch;
+      if (!room || !match) return;
+
+      const players = room.players || [];
+      if (players.length === 0) return;
+
+      const isEdit = Boolean(existingRound);
+      const roundNumber = isEdit
+        ? (match.rounds || []).findIndex((r) => r.roundId === existingRound.roundId) + 1
+        : (match.rounds || []).length + 1;
+
+      const isGin = match.gameId === 'gin-rummy';
+      const isScrabble = match.gameId === 'scrabble';
+      const ginBonus = match.rules?.ginBonus ?? 25;
+      const undercutBonus = match.rules?.undercutBonus ?? 25;
+
+      const exprMap = {};
+      const touchedSeats = new Set();
+
+      players.forEach((p) => {
+        if (isEdit) {
+          const val = existingRound.scores?.[p.seatId];
+          exprMap[p.seatId] = val !== null && val !== undefined ? String(val).replace('-', '−') : '';
+        } else {
+          exprMap[p.seatId] = '';
+        }
+      });
+
+      // Focus requested seat -> current user's seat -> first player
+      let activeIdx = 0;
+      if (focusSeatId) {
+        const idx = players.findIndex((p) => p.seatId === focusSeatId);
+        if (idx !== -1) activeIdx = idx;
+      } else {
+        const myIdx = players.findIndex((p) => p.claimedByUid && p.claimedByUid === state.currentUser.uid);
+        if (myIdx !== -1) activeIdx = myIdx;
+      }
+
+      let noteText = isEdit ? (existingRound.note || '') : '';
+      let noteTouched = false;
+      let showNoteField = Boolean(noteText);
+
+      const renderLogRoundUI = () => {
+        const activePlayer = players[activeIdx];
+        const isLastPlayer = activeIdx === players.length - 1;
+
+        openModal(`
+          <div class="p-4 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                  ${escapeHtml(match.gameName)}
+                </span>
+                <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">
+                  ${isEdit ? `Round ${roundNumber} Scores` : `Log Round ${roundNumber}`}
+                </h2>
+              </div>
+              <button type="button" id="lr-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-sm">✕</button>
+            </div>
+
+            <!-- Player Score Selector Rows -->
+            <div class="space-y-2 max-h-[30vh] overflow-y-auto pr-0.5">
+              ${players.map((p, idx) => {
+                const av = getAvatarObj(p.avatar);
+                const isActive = idx === activeIdx;
+                const expr = exprMap[p.seatId] || '';
+                const evalVal = expr ? evaluateScoreExpression(expr) : null;
+                const hasExprOps = /[+−×]/.test(expr.slice(1));
+
+                return `
+                  <button
+                    type="button"
+                    data-select-player-idx="${idx}"
+                    class="lr-player-row w-full text-left p-3 rounded-2xl border-2 transition flex items-center justify-between gap-3 ${
+                      isActive
+                        ? 'border-indigo-600 dark:border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/50 shadow-sm'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:border-slate-300 dark:hover:border-slate-700'
+                    }"
+                  >
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 ${av.color}">${av.emoji}</span>
+                      <div class="min-w-0">
+                        <div class="font-bold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(p.name)}</div>
+                        <div class="text-[10px] font-bold uppercase tracking-wider ${
+                          isActive
+                            ? 'text-indigo-600 dark:text-indigo-400'
+                            : !expr
+                              ? 'text-slate-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                        }">
+                          ${isActive ? 'Entering score' : !expr ? 'Pending' : 'Entered'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="text-right shrink-0">
+                      <div class="font-extrabold text-xl tabular-nums leading-tight ${
+                        evalVal !== null && Number.isNaN(evalVal)
+                          ? 'text-rose-500'
+                          : isActive
+                            ? 'text-indigo-700 dark:text-indigo-300'
+                            : 'text-slate-900 dark:text-white'
+                      }">
+                        ${expr ? escapeHtml(expr) : '<span class="text-slate-400 dark:text-slate-500">—</span>'}
+                      </div>
+                      ${hasExprOps ? `
+                        <div class="text-[11px] font-bold tabular-nums ${Number.isNaN(evalVal) ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}">
+                          ${Number.isNaN(evalVal) ? 'Check math' : `= ${evalVal}`}
+                        </div>
+                      ` : ''}
+                    </div>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- Quick Bonus Buttons + Note Toggle -->
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                ${isGin && ginBonus > 0 ? `<button type="button" data-quick-bonus="${ginBonus}" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-xs font-bold text-indigo-700 dark:text-indigo-300 active:scale-95 transition">+${ginBonus} Gin</button>` : ''}
+                ${isGin && undercutBonus > 0 ? `<button type="button" data-quick-bonus="${undercutBonus}" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+${undercutBonus} Undercut</button>` : ''}
+                ${isScrabble ? `<button type="button" data-quick-bonus="50" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+50 Bingo</button>` : ''}
+              </div>
+              <button type="button" id="lr-toggle-note-btn" class="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
+                ${showNoteField ? 'Hide Note' : '+ Add Round Note'}
+              </button>
+            </div>
+
+            ${showNoteField ? `
+              <input
+                id="lr-note"
+                type="text"
+                maxlength="60"
+                value="${escapeHtml(noteText)}"
+                placeholder="${isScrabble ? 'e.g., QUARTZ on triple word' : 'e.g., Alex went Gin!'}"
+                class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            ` : ''}
+
+            ${buildNumberPadHtml({ nextLabel: isLastPlayer ? 'Save ✓' : 'Next ↵' })}
+
+            <div class="flex flex-col sm:flex-row gap-2">
+              <button type="button" id="lr-save-btn" class="flex-1 py-3.5 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-bold text-sm shadow-sm transition">
+                Save Round ${roundNumber}
+              </button>
+              ${isScrabble && !isEdit ? `
+                <button type="button" id="lr-switch-out-btn" class="py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm transition">
+                  🏁 Someone Went OUT
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `, { maxWidth: 'max-w-md' });
+
+        document.getElementById('lr-close-btn').addEventListener('click', closeModal);
+
+        const captureNote = () => {
+          const nInp = document.getElementById('lr-note');
+          if (nInp && nInp.value !== noteText) {
+            noteText = nInp.value;
+            noteTouched = true;
+          }
+        };
+
+        document.querySelectorAll('.lr-player-row').forEach((row) => {
+          row.addEventListener('click', () => {
+            captureNote();
+            activeIdx = parseInt(row.getAttribute('data-select-player-idx'), 10);
+            renderLogRoundUI();
+          });
+        });
+
+        document.querySelectorAll('.lr-bonus-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            captureNote();
+            const bonus = btn.getAttribute('data-quick-bonus');
+            const sid = activePlayer.seatId;
+            const cur = exprMap[sid] || '';
+            exprMap[sid] = cur ? `${cur}+${bonus}` : `${bonus}`;
+            touchedSeats.add(sid);
+            renderLogRoundUI();
+          });
+        });
+
+        document.getElementById('lr-toggle-note-btn').addEventListener('click', () => {
+          captureNote();
+          showNoteField = !showNoteField;
+          renderLogRoundUI();
+          if (showNoteField) {
+            const nInp = document.getElementById('lr-note');
+            if (nInp) nInp.focus();
+          }
+        });
+
+        const submitRound = async () => {
+          captureNote();
+          let hasInvalid = false;
+          const enteredMap = {};
+
+          players.forEach((p) => {
+            const raw = (exprMap[p.seatId] || '').trim();
+            if (!raw) {
+              enteredMap[p.seatId] = null;
+            } else {
+              const parsed = evaluateScoreExpression(raw);
+              if (Number.isNaN(parsed)) {
+                hasInvalid = true;
+              } else {
+                enteredMap[p.seatId] = parsed;
+              }
+            }
+          });
+
+          if (hasInvalid) {
+            showToast('Please fix the invalid math expression before saving.', 'error');
+            return;
+          }
+
+          const anyEntered = Object.values(enteredMap).some((v) => v !== null);
+          if (!isEdit && !anyEntered) {
+            showToast('Enter at least one score on the number pad (even 0) to log this round.', 'warning');
+            return;
+          }
+
+          // Merge cleanly with the latest live room state so concurrent entries never overwrite each other
+          const updated = JSON.parse(JSON.stringify(state.currentRoom));
+          const latestRounds = updated.activeMatch.rounds || [];
+
+          let targetRoundIndex = -1;
+          if (isEdit) {
+            targetRoundIndex = latestRounds.findIndex((r) => r.roundId === existingRound.roundId);
+          } else if (
+            latestRounds.length >= roundNumber &&
+            latestRounds[roundNumber - 1]?.type === 'standard'
+          ) {
+            targetRoundIndex = roundNumber - 1;
+          }
+
+          if (targetRoundIndex !== -1) {
+            const target = latestRounds[targetRoundIndex];
+            const mergedScores = { ...(target.scores || {}) };
+            touchedSeats.forEach((sid) => {
+              mergedScores[sid] = enteredMap[sid];
+            });
+            latestRounds[targetRoundIndex] = {
+              ...target,
+              scores: mergedScores,
+              note: noteTouched ? noteText.trim() : (target.note || ''),
+              editedBy: state.currentUser.name || 'Player',
+            };
+          } else {
+            const newScores = {};
+            players.forEach((p) => {
+              newScores[p.seatId] = enteredMap[p.seatId];
+            });
+            latestRounds.push({
+              roundId: generateId('rnd'),
+              type: 'standard',
+              scores: newScores,
+              note: noteText.trim(),
+              loggedBy: state.currentUser.name || 'Player',
+              createdAt: Date.now(),
+            });
+          }
+
+          updated.activeMatch.rounds = latestRounds;
+          closeModal();
+
+          if (updated.activeMatch.gameId === 'gin-rummy') {
+            const target = updated.activeMatch.rules?.targetScore || 100;
+            const newTotals = computePlayerTotals(updated);
+            const reached = Object.values(newTotals).some((v) => v >= target);
+            if (reached) {
+              await finalizeMatch(updated);
+              return;
+            }
+          }
+
+          await saveRoom(updated);
+          showToast(targetRoundIndex !== -1 ? `Round ${roundNumber} updated!` : `Round ${roundNumber} logged!`, 'success');
+        };
+
+        const handlePadPress = (key) => {
+          captureNote();
+          const sid = activePlayer.seatId;
+          if (key === 'NEXT') {
+            if (activeIdx < players.length - 1) {
+              activeIdx += 1;
+              renderLogRoundUI();
+            } else {
+              submitRound();
+            }
+            return;
+          }
+          exprMap[sid] = applyNumberPadKey(exprMap[sid], key);
+          touchedSeats.add(sid);
+          renderLogRoundUI();
+        };
+
+        document.querySelectorAll('.np-key').forEach((btn) => {
+          btn.addEventListener('click', () => handlePadPress(btn.getAttribute('data-np')));
+        });
+
+        const switchOutBtn = document.getElementById('lr-switch-out-btn');
+        if (switchOutBtn) {
+          switchOutBtn.addEventListener('click', () => openScrabbleOutModal());
+        }
+
+        document.getElementById('lr-save-btn').addEventListener('click', submitRound);
+
+        activeModalKeydownHandler = (e) => {
+          if (document.activeElement && document.activeElement.id === 'lr-note') return;
+          if (/^[0-9]$/.test(e.key)) {
+            e.preventDefault();
+            handlePadPress(e.key);
+          } else if (e.key === '+') {
+            e.preventDefault();
+            handlePadPress('+');
+          } else if (e.key === '-') {
+            e.preventDefault();
+            handlePadPress('−');
+          } else if (e.key === '*') {
+            e.preventDefault();
+            handlePadPress('×');
+          } else if (e.key === 'Backspace') {
+            e.preventDefault();
+            handlePadPress('BACK');
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            handlePadPress('NEXT');
+          } else if (e.key === 'Escape') {
+            closeModal();
+          }
+        };
+        window.addEventListener('keydown', activeModalKeydownHandler);
+      };
+
+      renderLogRoundUI();
+    }
+
+    // MODAL 7: SCRABBLE "OUT" ENDGAME TILE-TRANSFER CALCULATOR
+    function openScrabbleOutModal() {
+      const room = state.currentRoom;
+      const match = room?.activeMatch;
+      if (!room || !match) return;
+      const players = room.players || [];
+      if (players.length < 2) {
+        showToast('Add at least 2 players before using Scrabble OUT.', 'warning');
+        return;
+      }
+
+      const doubleTransfer = Boolean(match.rules?.doubleTileTransfer);
+      let outSeatId = players[0].seatId;
+      const remainingExpr = {};
+      players.forEach((p) => {
+        remainingExpr[p.seatId] = '';
+      });
+      let activeOtherIdx = 0;
+
+      const renderOutModal = () => {
+        const otherPlayers = players.filter((p) => p.seatId !== outSeatId);
+        if (activeOtherIdx >= otherPlayers.length) activeOtherIdx = 0;
+        const activeOther = otherPlayers[activeOtherIdx];
+        const isLastOther = activeOtherIdx === otherPlayers.length - 1;
+
+        let totalRemaining = 0;
+        otherPlayers.forEach((p) => {
+          const val = evaluateScoreExpression(remainingExpr[p.seatId] || '0');
+          if (!Number.isNaN(val) && val > 0) totalRemaining += val;
+        });
+
+        const outPlayer = players.find((p) => p.seatId === outSeatId);
+        const outBonus = doubleTransfer ? totalRemaining * 2 : totalRemaining;
+
+        openModal(`
+          <div class="p-4 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <span class="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Scrabble Endgame</span>
+                <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">🏁 Player Went OUT</h2>
+              </div>
+              <button type="button" id="so-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+            </div>
+
+            <!-- Step 1: Who Went Out -->
+            <div class="space-y-1.5">
+              <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">1. Who used their last tile?</div>
+              <div class="grid grid-cols-2 gap-2">
+                ${players.map((p) => {
+                  const av = getAvatarObj(p.avatar);
+                  const active = p.seatId === outSeatId;
+                  return `
+                    <button type="button" data-out-seat="${escapeHtml(p.seatId)}" class="so-out-seat-btn p-2.5 rounded-2xl border-2 flex items-center gap-2 text-left transition ${
+                      active
+                        ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/40'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                    }">
+                      <span class="text-lg">${av.emoji}</span>
+                      <span class="font-bold text-sm truncate text-slate-900 dark:text-white">${escapeHtml(p.name)}</span>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <!-- Step 2: Enter Remaining Tile Points for Other Players -->
+            <div class="space-y-1.5">
+              <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                2. Enter remaining tile points on each opponent's rack
+              </div>
+              <div class="space-y-2 max-h-[24vh] overflow-y-auto pr-0.5">
+                ${otherPlayers.map((p, idx) => {
+                  const av = getAvatarObj(p.avatar);
+                  const isActive = idx === activeOtherIdx;
+                  const expr = remainingExpr[p.seatId] || '';
+                  const parsed = expr ? evaluateScoreExpression(expr) : 0;
+                  return `
+                    <button
+                      type="button"
+                      data-other-idx="${idx}"
+                      class="so-other-row w-full text-left p-3 rounded-2xl border-2 transition flex items-center justify-between gap-3 ${
+                        isActive
+                          ? 'border-indigo-600 dark:border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/50'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50'
+                      }"
+                    >
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 ${av.color}">${av.emoji}</span>
+                        <div class="min-w-0">
+                          <div class="font-bold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(p.name)}</div>
+                          <div class="text-[10px] font-bold text-rose-500">
+                            ${doubleTransfer ? 'No deduction (2× rule)' : `Will subtract −${Number.isNaN(parsed) ? 0 : Math.max(0, parsed)} pts`}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="font-extrabold text-xl tabular-nums ${Number.isNaN(parsed) ? 'text-rose-500' : 'text-slate-900 dark:text-white'}">
+                        ${expr ? escapeHtml(expr) : '<span class="text-slate-400">0</span>'}
+                      </div>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <!-- Live Transfer Preview -->
+            <div class="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 flex items-center justify-between text-xs font-bold">
+              <span class="text-emerald-800 dark:text-emerald-300">${escapeHtml(outPlayer?.name || 'Player')} receives:</span>
+              <span class="text-base font-black text-emerald-700 dark:text-emerald-300 tabular-nums">+${outBonus} pts</span>
+            </div>
+
+            ${buildNumberPadHtml({ nextLabel: isLastOther ? 'Finish ✓' : 'Next ↵' })}
+
+            <button type="button" id="so-finalize-btn" class="w-full py-3.5 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm shadow-sm transition">
+              Apply Tile Transfer &amp; Declare Winner →
+            </button>
+          </div>
+        `, { maxWidth: 'max-w-md' });
+
+        document.getElementById('so-close-btn').addEventListener('click', closeModal);
+
+        document.querySelectorAll('.so-out-seat-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            outSeatId = btn.getAttribute('data-out-seat');
+            activeOtherIdx = 0;
+            renderOutModal();
+          });
+        });
+
+        document.querySelectorAll('.so-other-row').forEach((row) => {
+          row.addEventListener('click', () => {
+            activeOtherIdx = parseInt(row.getAttribute('data-other-idx'), 10);
+            renderOutModal();
+          });
+        });
+
+        const finalizeOut = async () => {
+          const deltas = {};
+          let sumTiles = 0;
+
+          for (const p of otherPlayers) {
+            const raw = (remainingExpr[p.seatId] || '').trim();
+            const val = raw ? evaluateScoreExpression(raw) : 0;
+            if (Number.isNaN(val) || val < 0) {
+              showToast(`Check ${p.name}'s remaining tile score.`, 'error');
+              return;
+            }
+            sumTiles += val;
+            deltas[p.seatId] = doubleTransfer ? 0 : -val;
+          }
+
+          deltas[outSeatId] = doubleTransfer ? sumTiles * 2 : sumTiles;
+
+          const updated = JSON.parse(JSON.stringify(state.currentRoom));
+          updated.activeMatch.rounds = updated.activeMatch.rounds || [];
+          updated.activeMatch.rounds.push({
+            roundId: generateId('rnd_out'),
+            type: 'scrabble-out',
+            scores: deltas,
+            note: `${outPlayer?.name || 'Player'} went OUT`,
+            loggedBy: state.currentUser.name || 'Player',
+            createdAt: Date.now(),
+          });
+
+          closeModal();
+          await finalizeMatch(updated);
+        };
+
+        const handlePad = (key) => {
+          if (!activeOther) return;
+          if (key === 'NEXT') {
+            if (activeOtherIdx < otherPlayers.length - 1) {
+              activeOtherIdx += 1;
+              renderOutModal();
+            } else {
+              finalizeOut();
+            }
+            return;
+          }
+          remainingExpr[activeOther.seatId] = applyNumberPadKey(remainingExpr[activeOther.seatId], key);
+          renderOutModal();
+        };
+
+        document.querySelectorAll('.np-key').forEach((btn) => {
+          btn.addEventListener('click', () => handlePad(btn.getAttribute('data-np')));
+        });
+
+        document.getElementById('so-finalize-btn').addEventListener('click', finalizeOut);
+
+        activeModalKeydownHandler = (e) => {
+          if (/^[0-9]$/.test(e.key)) {
+            e.preventDefault();
+            handlePad(e.key);
+          } else if (e.key === '+') {
+            e.preventDefault();
+            handlePad('+');
+          } else if (e.key === '-') {
+            e.preventDefault();
+            handlePad('−');
+          } else if (e.key === '*') {
+            e.preventDefault();
+            handlePad('×');
+          } else if (e.key === 'Backspace') {
+            e.preventDefault();
+            handlePad('BACK');
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            handlePad('NEXT');
+          } else if (e.key === 'Escape') {
+            closeModal();
+          }
+        };
+        window.addEventListener('keydown', activeModalKeydownHandler);
+      };
+
+      renderOutModal();
+    }
+
+    // MODAL 8: CLOSE GAME (Save for Later vs Two-Step Discard)
+    function openCloseGameModal() {
+      const match = state.currentRoom?.activeMatch;
+      if (!match) return;
+
+      openModal(`
+        <div class="p-5 sm:p-6 space-y-5">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Host Control</span>
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Close ${escapeHtml(match.gameName)}?</h2>
+            </div>
+            <button id="cg-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+          </div>
+
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            Choose whether to pause and save your ${(match.rounds || []).length} logged rounds for later, or permanently discard this match.
+          </p>
+
+          <div class="space-y-2.5">
+            <button id="cg-save-later-btn" class="w-full p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-left flex items-center gap-3 transition">
+              <span class="text-2xl">💾</span>
+              <div>
+                <div class="font-extrabold text-sm text-indigo-800 dark:text-indigo-200">Save Game for Later</div>
+                <div class="text-xs text-indigo-600/80 dark:text-indigo-300/80">Return to the lobby and resume right here anytime.</div>
+              </div>
+            </button>
+
+            <button id="cg-discard-btn" class="w-full p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-left flex items-center gap-3 transition">
+              <span class="text-2xl">🗑️</span>
+              <div>
+                <div class="font-extrabold text-sm text-rose-700 dark:text-rose-300">Discard Game</div>
+                <div class="text-xs text-rose-600/80 dark:text-rose-400/80">Permanently erase all scores from this match (requires confirmation).</div>
+              </div>
+            </button>
+          </div>
+
+          <button id="cg-cancel-btn" class="w-full py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">Keep Playing</button>
+        </div>
+      `, { maxWidth: 'max-w-md' });
+
+      document.getElementById('cg-close-btn').addEventListener('click', closeModal);
+      document.getElementById('cg-cancel-btn').addEventListener('click', closeModal);
+
+      document.getElementById('cg-save-later-btn').addEventListener('click', async () => {
+        closeModal();
+        await saveActiveGameForLater();
+      });
+
+      document.getElementById('cg-discard-btn').addEventListener('click', () => {
+        openTwoStepDiscardConfirmModal({
+          title: `Permanently Discard ${match.gameName}?`,
+          subtitle: `All ${(match.rounds || []).length} logged rounds will be deleted and will not be added to history.`,
+          onConfirm: async () => {
+            await discardActiveGame();
+          },
+        });
+      });
+    }
+
+    // MODAL 9: TWO-STEP DISCARD CONFIRMATION
+    function openTwoStepDiscardConfirmModal({ title, subtitle, onConfirm }) {
+      openModal(`
+        <div class="p-5 sm:p-6 space-y-5">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Extra Confirmation Required</span>
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(title)}</h2>
+            </div>
+            <button id="dc-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+          </div>
+
+          <div class="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 text-xs text-rose-700 dark:text-rose-300 leading-relaxed">
+            ${escapeHtml(subtitle)}
+          </div>
+
+          <label class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer">
+            <input id="dc-ack-checkbox" type="checkbox" class="mt-0.5 w-4 h-4 rounded accent-rose-600" />
+            <span class="text-xs font-bold text-slate-700 dark:text-slate-200">
+              I understand this cannot be undone and want to permanently discard this game.
+            </span>
+          </label>
+
+          <div class="flex gap-2.5">
+            <button id="dc-cancel-btn" class="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">Cancel</button>
+            <button id="dc-confirm-btn" disabled class="flex-1 py-3 rounded-2xl bg-rose-600 disabled:bg-rose-300 dark:disabled:bg-rose-950 disabled:cursor-not-allowed hover:bg-rose-500 text-white font-extrabold text-sm transition">
+              Yes, Discard
+            </button>
+          </div>
+        </div>
+      `, { maxWidth: 'max-w-md' });
+
+      const cb = document.getElementById('dc-ack-checkbox');
+      const confirmBtn = document.getElementById('dc-confirm-btn');
+
+      document.getElementById('dc-close-btn').addEventListener('click', closeModal);
+      document.getElementById('dc-cancel-btn').addEventListener('click', closeModal);
+
+      cb.addEventListener('change', () => {
+        confirmBtn.disabled = !cb.checked;
+      });
+
+      confirmBtn.addEventListener('click', async () => {
+        if (!cb.checked) return;
+        closeModal();
+        if (onConfirm) await onConfirm();
+      });
+    }
+
+    // MODAL 10: CLOSE ROOM CONFIRMATION
+    function openCloseRoomConfirmModal() {
+      const room = state.currentRoom;
+      if (!room) return;
+      const hasActiveMatch = Boolean(room.activeMatch && room.status === 'playing');
+
+      openModal(`
+        <div class="p-5 sm:p-6 space-y-5">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Host Control</span>
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Close Room ${escapeHtml(room.code)}?</h2>
+            </div>
+            <button id="cr-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+          </div>
+
+          <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            Closing the room will disconnect all seated players and return everyone to the home screen.
+          </p>
+
+          <div class="space-y-2.5">
+            ${hasActiveMatch ? `
+              <button id="cr-save-and-close-btn" class="w-full py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm transition">
+                💾 Save Active Game &amp; Close Room
+              </button>
+            ` : ''}
+            <button id="cr-confirm-close-btn" class="w-full py-3.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-sm transition">
+              ${hasActiveMatch ? 'Discard Active Game & Close Room' : `Close Room ${escapeHtml(room.code)}`}
+            </button>
+            <button id="cr-cancel-btn" class="w-full py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">Cancel</button>
+          </div>
+        </div>
+      `, { maxWidth: 'max-w-md' });
+
+      document.getElementById('cr-close-btn').addEventListener('click', closeModal);
+      document.getElementById('cr-cancel-btn').addEventListener('click', closeModal);
+
+      const saveAndClose = document.getElementById('cr-save-and-close-btn');
+      if (saveAndClose) {
+        saveAndClose.addEventListener('click', async () => {
+          closeModal();
+          await closeCurrentRoom({ saveActiveFirst: true });
+        });
+      }
+
+      document.getElementById('cr-confirm-close-btn').addEventListener('click', async () => {
+        closeModal();
+        await closeCurrentRoom({ saveActiveFirst: false });
+      });
+    }
+
+    // MODAL 11: HOST ADDS A NEW SEAT
+    function openAddSeatModal() {
+      let seatAvatar = pickRandomEmoji();
+      let seatName = '';
+
+      openModal(`
+        <div class="p-5 sm:p-6 space-y-5">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Host Control</span>
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Add a Player Seat</h2>
+            </div>
+            <button id="as-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+          </div>
+
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            Create a seat to log scores for someone right away. If they join the room on their own device later, they can claim this seat!
+          </p>
+
+          <div class="space-y-3">
+            <div>
+              <label for="as-name-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Player Name</label>
+              <input
+                id="as-name-input"
+                type="text"
+                maxlength="24"
+                value="${escapeHtml(seatName)}"
+                placeholder="e.g., Jordan"
+                class="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            ${buildEmojiPickerHtml(seatAvatar, 'as-ep')}
+          </div>
+
+          <div class="flex gap-2.5">
+            <button id="as-cancel-btn" class="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">Cancel</button>
+            <button id="as-save-btn" class="flex-1 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm transition">Add Seat</button>
+          </div>
+        </div>
+      `, { maxWidth: 'max-w-md' });
+
+      document.getElementById('as-close-btn').addEventListener('click', closeModal);
+      document.getElementById('as-cancel-btn').addEventListener('click', closeModal);
+
+      bindEmojiPickerEvents({
+        prefix: 'as-ep',
+        initialValue: seatAvatar,
+        onSelect: (emojiStr) => {
+          seatAvatar = emojiStr;
+        },
+      });
+
+      document.getElementById('as-save-btn').addEventListener('click', async () => {
+        const inp = document.getElementById('as-name-input');
+        const name = (inp ? inp.value : seatName).trim();
+        if (!name) {
+          showToast('Enter a name for this seat.', 'warning');
+          return;
+        }
+        const updated = JSON.parse(JSON.stringify(state.currentRoom));
+        updated.players = updated.players || [];
+        updated.players.push({
+          seatId: generateId('seat'),
+          name,
+          avatar: seatAvatar,
+          claimedByUid: null,
+          profileId: null,
+        });
+        await saveRoom(updated);
+        closeModal();
+        showToast(`Added seat for ${name}!`, 'success');
+      });
+    }
+
+    // MODAL 12: ROOM SETTINGS (Host Transfer, Scoring Permissions, Copy Invite Link, Close Room)
+    function openRoomSettingsModal() {
+      const room = state.currentRoom;
+      if (!room) return;
+      const host = isHost(room);
+      const claimedPlayers = (room.players || []).filter((p) => Boolean(p.claimedByUid));
+      const whoCanScore = room.settings?.whoCanScore || 'anyone';
+
+      openModal(`
+        <div class="p-5 sm:p-6 space-y-5">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Room ${escapeHtml(room.code)}</span>
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Room Settings</h2>
+            </div>
+            <button id="set-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+          </div>
+
+          <!-- Quick Invite Link Card -->
+          <div class="p-3.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/70 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="text-xs font-extrabold text-indigo-900 dark:text-indigo-200">Invite Friends via Text</div>
+              <div class="text-[11px] text-indigo-700/80 dark:text-indigo-300/80">Copies a direct link that opens Room ${escapeHtml(room.code)}</div>
+            </div>
+            <button id="set-copy-link-btn" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shrink-0 transition">
+              Copy Link
+            </button>
+          </div>
+
+          ${host ? `
+            <!-- Scoring Permissions -->
+            <div class="space-y-2">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Who Can Log Scores?</label>
+              <div class="grid grid-cols-2 gap-2">
+                <button data-score-perm="anyone" class="set-perm-btn py-2.5 px-3 rounded-2xl border-2 text-xs font-bold transition ${
+                  whoCanScore === 'anyone'
+                    ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                }">
+                  Anyone in Room
+                </button>
+                <button data-score-perm="host" class="set-perm-btn py-2.5 px-3 rounded-2xl border-2 text-xs font-bold transition ${
+                  whoCanScore === 'host'
+                    ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                }">
+                  Host Only
+                </button>
+              </div>
+            </div>
+
+            <!-- Transfer Host -->
+            <div class="space-y-2">
+              <label for="set-host-select" class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Room Host</label>
+              <div class="flex gap-2">
+                <select id="set-host-select" class="flex-1 px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold">
+                  ${claimedPlayers.map((p) => `
+                    <option value="${escapeHtml(p.claimedByUid)}" ${p.claimedByUid === room.hostUid ? 'selected' : ''}>
+                      ${getAvatarObj(p.avatar).emoji} ${escapeHtml(p.name)} ${p.claimedByUid === room.hostUid ? '(Current Host)' : ''}
+                    </option>
+                  `).join('')}
+                </select>
+                <button id="set-transfer-host-btn" class="px-4 py-2.5 rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-bold text-xs shrink-0">
+                  Update
+                </button>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
+              <button id="set-close-room-btn" class="w-full py-3 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 text-rose-600 dark:text-rose-400 font-extrabold text-sm transition">
+                Close Room ${escapeHtml(room.code)}
+              </button>
+            </div>
+          ` : `
+            <div class="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300">
+              Only the room host can change room permissions, transfer hosting, or close the room.
+            </div>
+            <button id="set-leave-room-btn" class="w-full py-3 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 font-bold text-sm">
+              Leave Room
+            </button>
+          `}
+
+          <button id="set-done-btn" class="w-full py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">Done</button>
+        </div>
+      `, { maxWidth: 'max-w-md' });
+
+      document.getElementById('set-close-btn').addEventListener('click', closeModal);
+      document.getElementById('set-done-btn').addEventListener('click', closeModal);
+
+      document.getElementById('set-copy-link-btn').addEventListener('click', () => {
+        handleQuickCopyAppLink(true);
+      });
+
+      document.querySelectorAll('.set-perm-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const perm = btn.getAttribute('data-score-perm');
+          const updated = JSON.parse(JSON.stringify(state.currentRoom));
+          updated.settings = { ...(updated.settings || {}), whoCanScore: perm };
+          await saveRoom(updated);
+          showToast(perm === 'host' ? 'Set to Host Only scoring.' : 'Anyone in the room can log scores.', 'success');
+          openRoomSettingsModal();
+        });
+      });
+
+      const transferBtn = document.getElementById('set-transfer-host-btn');
+      if (transferBtn) {
+        transferBtn.addEventListener('click', async () => {
+          const sel = document.getElementById('set-host-select');
+          if (!sel || !sel.value || sel.value === room.hostUid) return;
+          const updated = JSON.parse(JSON.stringify(state.currentRoom));
+          updated.hostUid = sel.value;
+          await saveRoom(updated);
+          closeModal();
+          showToast('Room host transferred!', 'success');
+        });
+      }
+
+      const closeRoomBtn = document.getElementById('set-close-room-btn');
+      if (closeRoomBtn) {
+        closeRoomBtn.addEventListener('click', () => openCloseRoomConfirmModal());
+      }
+
+      const leaveBtn = document.getElementById('set-leave-room-btn');
+      if (leaveBtn) {
+        leaveBtn.addEventListener('click', () => {
+          closeModal();
+          leaveRoomLocal();
+        });
+      }
+    }
+
+    // =========================================================================
+    // 12. GLOBAL EVENT BINDINGS & URL INVITE AUTO-JOIN
+    // =========================================================================
+    function readInviteCodeFromUrl() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const code = (params.get('room') || '').replace(/\s+/g, '').toUpperCase();
+        if (code.length === 4) {
+          state.pendingInviteCode = code;
+        }
+      } catch {
+        // Ignore URL parsing errors
+      }
+    }
+
+    async function handlePendingInviteParam() {
+      if (!state.pendingInviteCode) return;
+      const code = state.pendingInviteCode;
+      state.pendingInviteCode = null;
+      const inp = document.getElementById('landing-room-code-input');
+      if (inp) inp.value = code;
+      await initiateJoinRoomFlow(code);
+    }
+
+    function bindGlobalEvents() {
+      document.getElementById('theme-toggle-btn').addEventListener('click', () => {
+        applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+        persistUserPreferences();
+      });
+
+      document.getElementById('header-copy-link-btn').addEventListener('click', () => {
+        handleQuickCopyAppLink(true);
+      });
+
+      document.getElementById('header-copy-code-btn').addEventListener('click', () => {
+        if (!state.currentRoomCode) return;
+        copyTextToClipboard(state.currentRoomCode);
+        showToast(`Room code ${state.currentRoomCode} copied!`, 'success');
+      });
+
+      document.getElementById('header-players-btn').addEventListener('click', () => {
+        if (state.currentRoom) openRoomSettingsModal();
+      });
+
+      document.getElementById('header-profile-btn').addEventListener('click', () => {
+        openJoinOrCreateIdentityModal({ profileOnly: true });
+      });
+
+      document.getElementById('header-home-btn').addEventListener('click', () => {
+        if (state.view !== 'landing') {
+          leaveRoomLocal();
+        }
+      });
+
+      // Clicking outside the modal closes it
+      document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+        if (e.target.id === 'modal-backdrop') {
+          closeModal();
+        }
+      });
+    }
+
+    // Bootstrap Application
+    initTheme();
+    readInviteCodeFromUrl();
+    loadFullEmojiCatalog();
+    bindGlobalEvents();
+    initFirebase();
+  </script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
