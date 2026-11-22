@@ -10,7 +10,7 @@
  * ============================================================================
  */
 
-const CACHE_NAME = 'game-board-v1.2';
+const CACHE_NAME = 'game-board-v2';
 const ASSETS = [
   './',
   './index.html',

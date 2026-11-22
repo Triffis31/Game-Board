@@ -134,6 +134,7 @@
       doc,
       getDoc,
       setDoc,
+      updateDoc,
       deleteDoc,
       onSnapshot,
       collection
@@ -378,6 +379,47 @@
           'When a player uses their last tile and the bag is empty, tap OUT to log remaining rack values—subtracting from each opponent and adding to the player who went out before determining the final winner.',
         ],
       },
+      {
+        id: 'golf',
+        name: 'Golf',
+        category: 'Card Game',
+        playersLabel: '2–8 Players',
+        tagline: 'Lowest score wins across 9 or 18 holes with negative hole-score support.',
+        gradient: 'from-emerald-500 via-teal-500 to-cyan-600',
+        emoji: '⛳',
+        defaultRules: {
+          totalHoles: 9,
+        },
+        rulesOverview: [
+          'Objective: Play a set number of holes (default 9 or 18). Lowest total score at the end wins.',
+          'Standard Card Values (4-Card & 6-Card Golf): Ace = 1 pt, 3–10 = face value, Jack & Queen = 10 pts, King = 0 pts, Joker = −2 pts. In 6-Card Golf, 2s are typically worth −2 pts (or 2 pts in 4-Card Golf).',
+          'Matching Pairs & Columns: In 4-Card Golf, matching pairs cancel to 0 pts. In 6-Card Golf, matching vertical columns cancel to 0 pts (some house rules award −10 or −20 for four-of-a-kind adjacent columns).',
+          'Logging Holes: Enter each player’s score hole-by-hole with the built-in number pad—use the ± button for negative scores. The winner is crowned once all holes are logged.',
+        ],
+      },
+      {
+        id: 'yahtzee',
+        name: 'Yahtzee',
+        category: 'Dice Game',
+        playersLabel: '1–8 Players',
+        tagline: 'Interactive scorecard with +/- 63-bonus pace, customizable lower section, and multi-game matches.',
+        gradient: 'from-violet-600 via-purple-600 to-fuchsia-600',
+        emoji: '🎲',
+        defaultRules: {
+          numGames: 1,
+          fullHouse: 25,
+          smallStraight: 30,
+          largeStraight: 40,
+          yahtzee: 50,
+          yahtzeeBonus: 100,
+        },
+        rulesOverview: [
+          'Upper Section (1s–6s): Score the sum of matching dice for each number. Reaching 63+ points earns a +35 Bonus. Your scorecard tracks a live +/- pace against 3-of-a-kind par for each number.',
+          'Lower Section: Tap any category to log the default score, scratch for 0, or enter a custom value. Default points (Full House 25, Small Straight 30, Large Straight 40, Yahtzee 50, Extra Yahtzee Bonus +100) can be customized by the host.',
+          'Multiple Yahtzees: Log extra Yahtzees either with the +100 Extra Yahtzee Bonus stepper or by overriding the Yahtzee cell directly with a custom point total.',
+          'Multi-Game Matches: Switch seamlessly between Game 1, Game 2, etc., while the compact leaderboard tracks everyone’s per-game scores, completion progress, and overall match total.',
+        ],
+      },
     ];
 
     // =========================================================================
@@ -409,6 +451,8 @@
       emojiCatalog: [...BUILTIN_EMOJI_CATALOG],
       emojiCatalogLoaded: false,
       pendingInviteCode: null,
+      yahtzeeActiveGameIdx: 0,
+      yahtzeeViewingSeatId: null,
     };
 
     // Tracks any active modal keyboard listener so it is always cleaned up on close
@@ -993,6 +1037,8 @@
       }
       state.currentRoomCode = null;
       state.currentRoom = null;
+      state.yahtzeeActiveGameIdx = 0;
+      state.yahtzeeViewingSeatId = null;
       state.view = 'landing';
       render();
     }
@@ -1102,12 +1148,161 @@
     // =========================================================================
     // 7. SCORING & MATCH LIFECYCLE LOGIC
     // =========================================================================
+    const YAHTZEE_UPPER_CATS = [
+      { key: 'ones', label: 'Ones', short: '1s', face: 1, par: 3, pip: '⚀' },
+      { key: 'twos', label: 'Twos', short: '2s', face: 2, par: 6, pip: '⚁' },
+      { key: 'threes', label: 'Threes', short: '3s', face: 3, par: 9, pip: '⚂' },
+      { key: 'fours', label: 'Fours', short: '4s', face: 4, par: 12, pip: '⚃' },
+      { key: 'fives', label: 'Fives', short: '5s', face: 5, par: 15, pip: '⚄' },
+      { key: 'sixes', label: 'Sixes', short: '6s', face: 6, par: 18, pip: '⚅' },
+    ];
+
+    const YAHTZEE_LOWER_CATS = [
+      { key: 'threeKind', label: '3 of a Kind', hint: 'Sum of all dice', fixed: false },
+      { key: 'fourKind', label: '4 of a Kind', hint: 'Sum of all dice', fixed: false },
+      { key: 'fullHouse', label: 'Full House', hint: '3 of one + 2 of another', fixed: true, ruleKey: 'fullHouse', fallback: 25 },
+      { key: 'smallStraight', label: 'Small Straight', hint: 'Sequence of 4 dice', fixed: true, ruleKey: 'smallStraight', fallback: 30 },
+      { key: 'largeStraight', label: 'Large Straight', hint: 'Sequence of 5 dice', fixed: true, ruleKey: 'largeStraight', fallback: 40 },
+      { key: 'yahtzee', label: 'Yahtzee', hint: '5 of a kind', fixed: true, ruleKey: 'yahtzee', fallback: 50 },
+      { key: 'chance', label: 'Chance', hint: 'Sum of any dice', fixed: false },
+    ];
+
+    function createEmptyYahtzeeGame() {
+      return {
+        ones: null,
+        twos: null,
+        threes: null,
+        fours: null,
+        fives: null,
+        sixes: null,
+        threeKind: null,
+        fourKind: null,
+        fullHouse: null,
+        smallStraight: null,
+        largeStraight: null,
+        yahtzee: null,
+        chance: null,
+        yahtzeeBonusCount: 0,
+        yahtzeeBonusPoints: null,
+      };
+    }
+
+    function getYahtzeeGameSheet(match, seatId, gameIdx) {
+      const sheet = match?.yahtzeeSheets?.[seatId]?.[String(gameIdx)];
+      return sheet ? { ...createEmptyYahtzeeGame(), ...sheet } : createEmptyYahtzeeGame();
+    }
+
+    function getYahtzeeBonusUnit(rules) {
+      const val = Number(rules?.yahtzeeBonus);
+      return Number.isFinite(val) && val >= 0 ? val : 100;
+    }
+
+    function computeYahtzeeGameStats(sheet, rules = {}) {
+      const s = { ...createEmptyYahtzeeGame(), ...(sheet || {}) };
+      let upperSubtotal = 0;
+      let upperFilledCount = 0;
+      let upperPaceDelta = 0;
+
+      YAHTZEE_UPPER_CATS.forEach((cat) => {
+        const val = s[cat.key];
+        if (val !== null && val !== undefined) {
+          const num = Number(val) || 0;
+          upperSubtotal += num;
+          upperFilledCount += 1;
+          upperPaceDelta += num - cat.par;
+        }
+      });
+
+      const upperBonus = upperSubtotal >= 63 ? 35 : 0;
+      const upperTotal = upperSubtotal + upperBonus;
+
+      let lowerCategoriesSum = 0;
+      let lowerFilledCount = 0;
+      YAHTZEE_LOWER_CATS.forEach((cat) => {
+        const val = s[cat.key];
+        if (val !== null && val !== undefined) {
+          lowerCategoriesSum += Number(val) || 0;
+          lowerFilledCount += 1;
+        }
+      });
+
+      const bonusUnit = getYahtzeeBonusUnit(rules);
+      const bonusCount = Math.max(0, Number(s.yahtzeeBonusCount) || 0);
+      const yahtzeeBonusTotal =
+        s.yahtzeeBonusPoints !== null && s.yahtzeeBonusPoints !== undefined
+          ? Math.max(0, Number(s.yahtzeeBonusPoints) || 0)
+          : bonusCount * bonusUnit;
+
+      const lowerSubtotal = lowerCategoriesSum + yahtzeeBonusTotal;
+      const filledCount = upperFilledCount + lowerFilledCount;
+      const gameTotal = upperTotal + lowerSubtotal;
+
+      return {
+        upperSubtotal,
+        upperBonus,
+        upperTotal,
+        upperFilledCount,
+        upperPaceDelta,
+        lowerCategoriesSum,
+        yahtzeeBonusCount: bonusCount,
+        yahtzeeBonusTotal,
+        lowerSubtotal,
+        lowerFilledCount,
+        filledCount,
+        gameTotal,
+      };
+    }
+
+    function computeYahtzeePlayerStats(room, seatId) {
+      const match = room?.activeMatch;
+      const rules = match?.rules || {};
+      const numGames = Math.max(1, parseInt(rules.numGames, 10) || 1);
+      const games = [];
+      let overallTotal = 0;
+      let totalFilled = 0;
+
+      for (let i = 0; i < numGames; i++) {
+        const stats = computeYahtzeeGameStats(getYahtzeeGameSheet(match, seatId, i), rules);
+        games.push(stats);
+        overallTotal += stats.gameTotal;
+        totalFilled += stats.filledCount;
+      }
+
+      return {
+        games,
+        overallTotal,
+        totalFilled,
+        totalSlots: numGames * 13,
+      };
+    }
+
+    function isYahtzeeMatchComplete(room) {
+      const players = room?.players || [];
+      if (players.length === 0 || room?.activeMatch?.gameId !== 'yahtzee') return false;
+      return players.every((p) => {
+        const ps = computeYahtzeePlayerStats(room, p.seatId);
+        return ps.totalSlots > 0 && ps.totalFilled >= ps.totalSlots;
+      });
+    }
+
+    function isLowestScoreWins(match) {
+      return match?.gameId === 'golf';
+    }
+
     function computePlayerTotals(room) {
       const totals = {};
       if (!room) return totals;
       (room.players || []).forEach((p) => {
         totals[p.seatId] = 0;
       });
+
+      if (room.activeMatch?.gameId === 'yahtzee') {
+        (room.players || []).forEach((p) => {
+          totals[p.seatId] = computeYahtzeePlayerStats(room, p.seatId).overallTotal;
+        });
+        return totals;
+      }
+
       const rounds = room.activeMatch?.rounds || [];
       rounds.forEach((r) => {
         Object.entries(r.scores || {}).forEach(([seatId, pts]) => {
@@ -1121,33 +1316,91 @@
 
     function computeStandings(room) {
       const totals = computePlayerTotals(room);
+      const lowWins = isLowestScoreWins(room?.activeMatch);
       return (room.players || [])
         .map((p) => ({ ...p, total: totals[p.seatId] || 0 }))
-        .sort((a, b) => b.total - a.total);
+        .sort((a, b) => (lowWins ? a.total - b.total : b.total - a.total));
+    }
+
+    async function updateYahtzeeCell(seatId, gameIdx, patchObj) {
+      const room = state.currentRoom;
+      if (!room || !room.activeMatch || room.activeMatch.gameId !== 'yahtzee') return;
+
+      const gKey = String(gameIdx);
+      const updated = JSON.parse(JSON.stringify(room));
+      updated.activeMatch.yahtzeeSheets = updated.activeMatch.yahtzeeSheets || {};
+      updated.activeMatch.yahtzeeSheets[seatId] = updated.activeMatch.yahtzeeSheets[seatId] || {};
+      const existingGame = {
+        ...createEmptyYahtzeeGame(),
+        ...(updated.activeMatch.yahtzeeSheets[seatId][gKey] || {}),
+        ...patchObj,
+      };
+      updated.activeMatch.yahtzeeSheets[seatId][gKey] = existingGame;
+
+      // Check whether every seated player has now finished all scorecards
+      if (isYahtzeeMatchComplete(updated)) {
+        await finalizeMatch(updated);
+        return;
+      }
+
+      if (isLocalFallback) {
+        await saveRoom(updated);
+        return;
+      }
+
+      if (!fbUser) return;
+      try {
+        // Atomic per-seat field update prevents concurrent players overwriting each other's sheets
+        const fieldUpdates = { updatedAt: Date.now() };
+        Object.entries(patchObj).forEach(([field, value]) => {
+          fieldUpdates[`activeMatch.yahtzeeSheets.${seatId}.${gKey}.${field}`] = value;
+        });
+        await updateDoc(getRoomDoc(room.code), fieldUpdates);
+      } catch (err) {
+        console.warn('Falling back to full room save for Yahtzee update:', err?.message || err);
+        await saveRoom(updated);
+      }
     }
 
     async function startNewMatchInRoom(game, rulesObj) {
       if (!state.currentRoom) return;
       const updated = JSON.parse(JSON.stringify(state.currentRoom));
+      const mergedRules = { ...game.defaultRules, ...(rulesObj || {}) };
       updated.status = 'playing';
       updated.activeMatch = {
         matchId: generateId('match'),
         gameId: game.id,
         gameName: game.name,
-        rules: { ...game.defaultRules, ...(rulesObj || {}) },
+        rules: mergedRules,
         rounds: [],
         startedAt: Date.now(),
         finishedAt: null,
         winnerSeatIds: [],
       };
+
+      if (game.id === 'yahtzee') {
+        const numGames = Math.max(1, parseInt(mergedRules.numGames, 10) || 1);
+        const sheets = {};
+        (updated.players || []).forEach((p) => {
+          sheets[p.seatId] = {};
+          for (let i = 0; i < numGames; i++) {
+            sheets[p.seatId][String(i)] = createEmptyYahtzeeGame();
+          }
+        });
+        updated.activeMatch.yahtzeeSheets = sheets;
+      }
+
+      state.yahtzeeActiveGameIdx = 0;
+      state.yahtzeeViewingSeatId = null;
+
       await saveRoom(updated);
       showToast(`Started ${game.name}!`, 'success');
     }
 
     async function finalizeMatch(roomObj) {
       const standings = computeStandings(roomObj);
-      const topScore = standings.length > 0 ? standings[0].total : 0;
-      const winners = standings.filter((p) => p.total === topScore);
+      const bestScore = standings.length > 0 ? standings[0].total : 0;
+      const winners = standings.filter((p) => p.total === bestScore);
       const winnerSeatIds = winners.map((w) => w.seatId);
 
       roomObj.status = 'finished';
@@ -1162,6 +1415,10 @@
       const participantProfileIds = [...new Set(
         (roomObj.players || []).map((p) => p.profileId).filter(Boolean)
       )];
+
+      const roundCount = roomObj.activeMatch.gameId === 'yahtzee'
+        ? Math.max(1, parseInt(roomObj.activeMatch.rules?.numGames, 10) || 1)
+        : (roomObj.activeMatch.rounds || []).length;
 
       const historyRecord = {
         matchId: roomObj.activeMatch.matchId || generateId('match'),
@@ -1178,7 +1435,7 @@
           total: s.total,
         })),
         winnerNames: winners.map((w) => w.name),
-        roundCount: (roomObj.activeMatch.rounds || []).length,
+        roundCount,
         finishedAt: roomObj.activeMatch.finishedAt,
       };
 
@@ -1238,6 +1495,8 @@
 
       updated.status = 'playing';
       updated.activeMatch = JSON.parse(JSON.stringify(savedObj.match));
+      state.yahtzeeActiveGameIdx = 0;
+      state.yahtzeeViewingSeatId = null;
       await saveRoom(updated);
       await deleteSavedMatchRecord(savedObj.savedId);
       showToast(`Resumed ${savedObj.gameName}!`, 'success');
@@ -1735,7 +1994,12 @@
                         <span class="text-[11px] font-semibold text-slate-400">${formatShortDate(sm.savedAt)}</span>
                       </div>
                       <div class="text-xs text-slate-500 dark:text-slate-400">
-                        ${(sm.match?.rounds || []).length} rounds · ${(sm.playersSnapshot || []).map((p) => `${escapeHtml(p.name)}: ${p.total}`).join(', ')}
+                        ${sm.gameId === 'yahtzee'
+                          ? `${Math.max(1, parseInt(sm.match?.rules?.numGames, 10) || 1)} ${(parseInt(sm.match?.rules?.numGames, 10) || 1) === 1 ? 'game' : 'games'}`
+                          : sm.gameId === 'golf'
+                            ? `${(sm.match?.rounds || []).length}/${sm.match?.rules?.totalHoles || 9} holes`
+                            : `${(sm.match?.rounds || []).length} rounds`
+                        } · ${(sm.playersSnapshot || []).map((p) => `${escapeHtml(p.name)}: ${p.total}`).join(', ')}
                       </div>
                     </div>
                     ${host ? `
@@ -1905,12 +2169,22 @@
     function renderMatchView(container) {
       const room = state.currentRoom;
       const match = room.activeMatch;
+      if (match.gameId === 'yahtzee') {
+        renderYahtzeeMatchView(container);
+        return;
+      }
+
       const game = GAME_CATALOG.find((g) => g.id === match.gameId);
       const host = isHost(room);
       const canScore = canCurrentUserScore(room);
       const isFinished = room.status === 'finished';
       const isGin = match.gameId === 'gin-rummy';
       const isScrabble = match.gameId === 'scrabble';
+      const isGolf = match.gameId === 'golf';
+      const unitLabel = isGolf ? 'Hole' : 'Round';
+      const unitLabelPlural = isGolf ? 'holes' : 'rounds';
+      const unitLabelShort = isGolf ? 'Hole' : 'Rnd';
+      const totalHoles = isGolf ? Math.max(1, parseInt(match.rules?.totalHoles, 10) || 9) : null;
 
       const players = room.players || [];
       const rounds = match.rounds || [];
@@ -1933,12 +2207,15 @@
         (lastStandardRound.scores?.[mySeat.seatId] === null || lastStandardRound.scores?.[mySeat.seatId] === undefined)
       );
       const displayRoundNum = lastStandardRound && pendingSeatsOnLastRound.length > 0 ? lastRoundNumber : rounds.length + 1;
+      const canLogNextHole = !isGolf || rounds.length < totalHoles;
 
       const ruleBadgeText = isGin
         ? `Playing to ${targetScore} pts`
-        : match.rules?.doubleTileTransfer
-          ? 'No cap · 2× OUT Tile Transfer'
-          : 'No cap · Tap OUT when tiles run out';
+        : isGolf
+          ? `${totalHoles}-hole match · Lowest score wins`
+          : match.rules?.doubleTileTransfer
+            ? 'No cap · 2× OUT Tile Transfer'
+            : 'No cap · Tap OUT when tiles run out';
 
       const winnerNames = standings.filter((s) => winnerSet.has(s.seatId)).map((s) => s.name);
 
@@ -1954,7 +2231,7 @@
                     ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
                     : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
                 }">
-                  ${isFinished ? 'Finished' : `Round ${displayRoundNum}`}
+                  ${isFinished ? 'Finished' : isGolf ? `Hole ${Math.min(displayRoundNum, totalHoles)} of ${totalHoles}` : `Round ${displayRoundNum}`}
                 </span>
               </div>
               <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(ruleBadgeText)}</p>
@@ -2006,11 +2283,12 @@
             ${standings.map((p, idx) => {
               const av = getAvatarObj(p.avatar);
               const isWinner = isFinished && winnerSet.has(p.seatId);
-              const isLeader = !isFinished && idx === 0 && p.total > 0;
+              const isLeader = !isFinished && idx === 0 && (isGolf ? rounds.length > 0 : p.total > 0);
               const rawLast = lastRound ? lastRound.scores?.[p.seatId] : undefined;
               const isPendingLast = !isFinished && Boolean(lastStandardRound) && (rawLast === null || rawLast === undefined);
               const lastDelta = rawLast !== null && rawLast !== undefined ? Number(rawLast) : null;
               const pct = targetScore ? Math.min(100, Math.max(0, Math.round((p.total / targetScore) * 100))) : null;
+              const deltaGood = isGolf ? (lastDelta !== null && lastDelta <= 0) : (lastDelta !== null && lastDelta > 0);
 
               return `
                 <div class="p-4 rounded-3xl bg-white dark:bg-slate-900 border-2 ${
@@ -2032,13 +2310,15 @@
                     </div>
                     ${isPendingLast ? `
                       <span class="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
-                        Rnd ${lastRoundNumber} Pending
+                        ${unitLabelShort} ${lastRoundNumber} Pending
                       </span>
-                    ` : lastDelta !== null && lastDelta !== 0 ? `
+                    ` : lastDelta !== null && (isGolf || lastDelta !== 0) ? `
                       <span class="px-2 py-0.5 rounded-lg text-xs font-extrabold tabular-nums ${
-                        lastDelta > 0
+                        deltaGood
                           ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                          : isGolf
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
                       }">
                         ${lastDelta > 0 ? `+${lastDelta}` : lastDelta}
                       </span>
@@ -2066,21 +2346,30 @@
               ${canScore ? `
                 ${currentUserPendingLastRound ? `
                   <button id="match-log-my-pending-btn" class="flex-1 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-soft transition flex items-center justify-center gap-2">
-                    <span>＋ Log Your Round ${lastRoundNumber} Score</span>
+                    <span>＋ Log Your ${unitLabel} ${lastRoundNumber} Score</span>
                   </button>
-                  <button id="match-log-round-btn" class="py-4 px-5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold text-sm transition flex items-center justify-center gap-2">
-                    <span>Start Round ${rounds.length + 1}</span>
-                  </button>
+                  ${canLogNextHole ? `
+                    <button id="match-log-round-btn" class="py-4 px-5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold text-sm transition flex items-center justify-center gap-2">
+                      <span>Start ${unitLabel} ${rounds.length + 1}</span>
+                    </button>
+                  ` : ''}
                 ` : `
-                  <button id="match-log-round-btn" class="flex-1 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-soft transition flex items-center justify-center gap-2">
-                    <span>＋ Log Round ${rounds.length + 1}</span>
-                  </button>
+                  ${canLogNextHole ? `
+                    <button id="match-log-round-btn" class="flex-1 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-soft transition flex items-center justify-center gap-2">
+                      <span>＋ Log ${unitLabel} ${rounds.length + 1}</span>
+                    </button>
+                  ` : ''}
                   ${pendingSeatsOnLastRound.length > 0 ? `
-                    <button id="match-fill-pending-btn" class="py-4 px-5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-sm transition flex items-center justify-center gap-1.5">
-                      <span>✎ Fill Round ${lastRoundNumber} (${pendingSeatsOnLastRound.length} pending)</span>
+                    <button id="match-fill-pending-btn" class="${canLogNextHole ? '' : 'flex-1'} py-4 px-5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-sm transition flex items-center justify-center gap-1.5">
+                      <span>✎ Fill ${unitLabel} ${lastRoundNumber} (${pendingSeatsOnLastRound.length} pending)</span>
                     </button>
                   ` : ''}
                 `}
+                ${isGolf && host && rounds.length >= totalHoles ? `
+                  <button id="match-golf-finish-btn" class="py-4 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-sm transition flex items-center justify-center gap-2">
+                    <span>🏁 Finish &amp; Crown Winner</span>
+                  </button>
+                ` : ''}
                 ${isScrabble ? `
                   <button id="match-scrabble-out-btn" class="py-4 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-extrabold text-sm sm:text-base shadow-sm transition flex items-center justify-center gap-2">
                     <span>🏁 OUT (End Game)</span>
@@ -2094,25 +2383,27 @@
             </div>
           ` : ''}
 
-          <!-- Round-by-Round Score Sheet -->
+          <!-- Round-by-Round / Hole-by-Hole Score Sheet -->
           <section class="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <h2 class="text-sm font-extrabold text-slate-900 dark:text-white">Score Sheet</h2>
-              <span class="text-xs font-semibold text-slate-400">${rounds.length} ${rounds.length === 1 ? 'round' : 'rounds'} logged</span>
+              <span class="text-xs font-semibold text-slate-400">
+                ${isGolf ? `${rounds.length} of ${totalHoles} holes` : `${rounds.length} ${rounds.length === 1 ? 'round' : unitLabelPlural} logged`}
+              </span>
             </div>
 
             ${rounds.length === 0 ? `
               <div class="p-8 text-center space-y-1">
-                <div class="text-2xl">📝</div>
-                <div class="font-bold text-sm text-slate-700 dark:text-slate-200">No rounds logged yet</div>
-                <p class="text-xs text-slate-400">Tap “Log Round 1” above to start tallying scores with the number pad.</p>
+                <div class="text-2xl">${isGolf ? '⛳' : '📝'}</div>
+                <div class="font-bold text-sm text-slate-700 dark:text-slate-200">No ${unitLabelPlural} logged yet</div>
+                <p class="text-xs text-slate-400">Tap “Log ${unitLabel} 1” above to start tallying scores with the number pad.</p>
               </div>
             ` : `
               <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                   <thead>
                     <tr class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      <th class="py-3 px-4 w-16">Rnd</th>
+                      <th class="py-3 px-4 w-16">${unitLabelShort}</th>
                       ${players.map((p) => `
                         <th class="py-3 px-3 text-right whitespace-nowrap">
                           <span class="mr-1">${getAvatarObj(p.avatar).emoji}</span>${escapeHtml(p.name)}
@@ -2128,7 +2419,7 @@
                         <tr class="${isOutRound ? 'bg-amber-50/70 dark:bg-amber-950/25' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}">
                           <td class="py-3 px-4 align-top">
                             <div class="font-extrabold text-xs ${isOutRound ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}">
-                              ${isOutRound ? 'OUT' : `#${idx + 1}`}
+                              ${isOutRound ? 'OUT' : isGolf ? `H${idx + 1}` : `#${idx + 1}`}
                             </div>
                             ${r.note ? `<div class="text-[11px] text-slate-400 max-w-[140px] truncate" title="${escapeHtml(r.note)}">${escapeHtml(r.note)}</div>` : ''}
                           </td>
@@ -2147,21 +2438,26 @@
                               `;
                             }
                             const val = Number(rawVal) || 0;
+                            const cellColor = isGolf
+                              ? val < 0
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : val === 0
+                                  ? 'text-emerald-700 dark:text-emerald-300'
+                                  : 'text-slate-900 dark:text-white'
+                              : val > 0
+                                ? 'text-slate-900 dark:text-white'
+                                : val < 0
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : 'text-slate-400 dark:text-slate-500';
                             return `
-                              <td class="py-3 px-3 text-right font-bold tabular-nums ${
-                                val > 0
-                                  ? 'text-slate-900 dark:text-white'
-                                  : val < 0
-                                    ? 'text-rose-600 dark:text-rose-400'
-                                    : 'text-slate-400 dark:text-slate-500'
-                              }">
+                              <td class="py-3 px-3 text-right font-bold tabular-nums ${cellColor}">
                                 ${val > 0 && isOutRound ? `+${val}` : val}
                               </td>
                             `;
                           }).join('')}
                           ${canScore && !isFinished ? `
                             <td class="py-3 px-3 text-right">
-                              <button data-edit-round="${escapeHtml(r.roundId)}" title="Edit Round" class="edit-round-btn p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 transition">
+                              <button data-edit-round="${escapeHtml(r.roundId)}" title="Edit ${unitLabel}" class="edit-round-btn p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 transition">
                                 ✎
                               </button>
                             </td>
@@ -2240,6 +2536,14 @@
         logRoundBtn.addEventListener('click', () => openLogRoundModal(null, mySeat?.seatId || null));
       }
 
+      const golfFinishBtn = document.getElementById('match-golf-finish-btn');
+      if (golfFinishBtn) {
+        golfFinishBtn.addEventListener('click', async () => {
+          const updated = JSON.parse(JSON.stringify(state.currentRoom));
+          await finalizeMatch(updated);
+        });
+      }
+
       const scrabbleOutBtn = document.getElementById('match-scrabble-out-btn');
       if (scrabbleOutBtn) {
         scrabbleOutBtn.addEventListener('click', () => openScrabbleOutModal());
@@ -2264,9 +2568,571 @@
     }
 
     // =========================================================================
+    // 9D. VIEW: YAHTZEE INTERACTIVE SCORECARD & COMPACT LEADERBOARD
+    // =========================================================================
+    function renderYahtzeeMatchView(container) {
+      const room = state.currentRoom;
+      const match = room.activeMatch;
+      const game = GAME_CATALOG.find((g) => g.id === 'yahtzee');
+      const rules = { ...(game?.defaultRules || {}), ...(match.rules || {}) };
+      const numGames = Math.max(1, parseInt(rules.numGames, 10) || 1);
+      const bonusUnit = getYahtzeeBonusUnit(rules);
+      const host = isHost(room);
+      const canScore = canCurrentUserScore(room);
+      const isFinished = room.status === 'finished';
+
+      const players = room.players || [];
+      const mySeat = players.find((p) => p.claimedByUid && p.claimedByUid === state.currentUser.uid) || null;
+
+      // Determine active sheet seat (defaults to your own seat; host or anyone with open seats can switch)
+      let viewingSeat = players.find((p) => p.seatId === state.yahtzeeViewingSeatId) || mySeat || players[0] || null;
+      if (viewingSeat) {
+        state.yahtzeeViewingSeatId = viewingSeat.seatId;
+      }
+
+      // Clamp active game index
+      if (state.yahtzeeActiveGameIdx >= numGames) {
+        state.yahtzeeActiveGameIdx = numGames - 1;
+      }
+      if (state.yahtzeeActiveGameIdx < 0) {
+        state.yahtzeeActiveGameIdx = 0;
+      }
+      const activeGameIdx = state.yahtzeeActiveGameIdx;
+
+      const standings = computeStandings(room);
+      const winnerSet = new Set(match.winnerSeatIds || []);
+      const winnerNames = standings.filter((s) => winnerSet.has(s.seatId)).map((s) => s.name);
+
+      // Compute viewing player's stats
+      const viewingPlayerStats = viewingSeat ? computeYahtzeePlayerStats(room, viewingSeat.seatId) : null;
+      const activeSheet = viewingSeat ? getYahtzeeGameSheet(match, viewingSeat.seatId, activeGameIdx) : createEmptyYahtzeeGame();
+      const activeStats = viewingPlayerStats ? viewingPlayerStats.games[activeGameIdx] : computeYahtzeeGameStats(activeSheet, rules);
+      const canEditViewingSheet = !isFinished && canScore && Boolean(viewingSeat);
+      const canSwitchSeats = players.length > 1 && (host || players.some((p) => !p.claimedByUid));
+
+      // Upper bonus pace pill formatting
+      const upperPointsNeeded = Math.max(0, 63 - activeStats.upperSubtotal);
+      let paceBadgeHtml = '';
+      if (activeStats.upperBonus > 0) {
+        paceBadgeHtml = `
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 text-xs font-extrabold">
+            ✓ +35 Bonus Locked!
+          </span>
+        `;
+      } else if (activeStats.upperFilledCount === 6) {
+        paceBadgeHtml = `
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-bold">
+            No Bonus (${upperPointsNeeded} short)
+          </span>
+        `;
+      } else if (activeStats.upperFilledCount === 0) {
+        paceBadgeHtml = `
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold">
+            Target: 63 (+35 bonus)
+          </span>
+        `;
+      } else {
+        const pace = activeStats.upperPaceDelta;
+        const paceStyle =
+          pace > 0
+            ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+            : pace === 0
+              ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+              : 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300';
+        const paceLabel =
+          pace > 0
+            ? `+${pace} ahead of 63 pace`
+            : pace === 0
+              ? 'On 63 pace (±0)'
+              : `${pace} behind 63 pace`;
+        paceBadgeHtml = `
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border text-xs font-extrabold tabular-nums ${paceStyle}">
+            ${paceLabel}
+          </span>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="space-y-5">
+          <!-- Match Header -->
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white">🎲 Yahtzee</h1>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                  isFinished
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300'
+                }">
+                  ${isFinished ? 'Finished' : numGames > 1 ? `${numGames}-Game Match` : 'Single Game'}
+                </span>
+              </div>
+              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+                FH ${rules.fullHouse} · Sm ${rules.smallStraight} · Lg ${rules.largeStraight} · Ytz ${rules.yahtzee} · Bonus +${bonusUnit}
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+              <button id="match-rules-btn" class="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 text-xs font-bold transition">
+                Rules
+              </button>
+              ${host && !isFinished ? `
+                <button id="match-edit-rules-btn" class="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 text-xs font-bold transition">
+                  Edit Rules
+                </button>
+                <button id="yz-finish-match-btn" class="px-3.5 py-2 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-xs font-bold transition">
+                  🏁 Finish
+                </button>
+                <button id="match-close-game-btn" class="px-3.5 py-2 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-bold transition">
+                  Close Game
+                </button>
+              ` : ''}
+              ${host && isFinished ? `
+                <button id="match-back-lobby-btn" class="px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold transition">
+                  ← Lobby
+                </button>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Winner Banner (when finished) -->
+          ${isFinished ? `
+            <div class="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-white shadow-soft flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div class="space-y-1">
+                <div class="text-xs font-extrabold uppercase tracking-widest opacity-90">🏆 Match Complete</div>
+                <div class="text-2xl font-black">${escapeHtml(winnerNames.join(' & ') || 'Winner')} Wins!</div>
+                <p class="text-xs sm:text-sm text-amber-50">Final Yahtzee totals have been saved to your table’s match history.</p>
+              </div>
+              ${host ? `
+                <div class="flex items-center gap-2 shrink-0">
+                  <button id="match-play-again-btn" class="px-4 py-2.5 rounded-2xl bg-white text-slate-900 hover:bg-amber-50 font-extrabold text-xs shadow-sm transition">
+                    Play Again
+                  </button>
+                  <button id="match-lobby-after-win-btn" class="px-4 py-2.5 rounded-2xl bg-black/20 hover:bg-black/30 text-white font-bold text-xs transition">
+                    Choose New Game
+                  </button>
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
+
+          <!-- Compact Table Leaderboard (No Individual Category Breakdowns for Other Players) -->
+          <section class="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Leaderboard</h2>
+              <span class="text-[11px] font-semibold text-slate-400">
+                ${numGames > 1 ? `Game ${activeGameIdx + 1} progress &amp; match totals` : 'Progress &amp; totals'}
+              </span>
+            </div>
+            <div class="divide-y divide-slate-100 dark:divide-slate-800/80">
+              ${standings.map((p, idx) => {
+                const av = getAvatarObj(p.avatar);
+                const ps = computeYahtzeePlayerStats(room, p.seatId);
+                const curGameStats = ps.games[activeGameIdx] || { filledCount: 0, gameTotal: 0 };
+                const isMe = mySeat && p.seatId === mySeat.seatId;
+                const isWinner = isFinished && winnerSet.has(p.seatId);
+                const isViewing = viewingSeat && p.seatId === viewingSeat.seatId;
+                const perGameSummary = ps.games.map((g, gi) => `G${gi + 1}: ${g.gameTotal}`).join(' · ');
+
+                return `
+                  <div class="px-4 py-3 flex items-center justify-between gap-3 ${isViewing ? 'bg-violet-50/50 dark:bg-violet-950/25' : ''}">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-6 text-center text-xs font-extrabold ${idx === 0 && ps.overallTotal > 0 ? 'text-amber-500' : 'text-slate-400'} shrink-0">
+                        ${isWinner ? '🏆' : `#${idx + 1}`}
+                      </span>
+                      <span class="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 ${av.color}">${av.emoji}</span>
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <span class="font-extrabold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(p.name)}</span>
+                          ${isMe ? '<span class="text-[10px] font-bold text-violet-600 dark:text-violet-400">(You)</span>' : ''}
+                          <span class="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-bold tabular-nums ${
+                            curGameStats.filledCount >= 13
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-slate-500 dark:text-slate-400'
+                          }">
+                            ${curGameStats.filledCount}/13
+                          </span>
+                        </div>
+                        ${numGames > 1 ? `
+                          <div class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 truncate tabular-nums">
+                            ${escapeHtml(perGameSummary)}
+                          </div>
+                        ` : ''}
+                      </div>
+                    </div>
+
+                    <div class="text-right shrink-0">
+                      <div class="text-lg font-black tabular-nums text-slate-900 dark:text-white leading-none">${ps.overallTotal}</div>
+                      <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Total</div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </section>
+
+          <!-- Full Interactive Score Sheet (Your Scorecard) -->
+          ${viewingSeat ? `
+            <section class="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <!-- Sheet Header & Optional Seat Switcher -->
+              <div class="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 space-y-3">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl shrink-0 ${getAvatarObj(viewingSeat.avatar).color}">
+                      ${getAvatarObj(viewingSeat.avatar).emoji}
+                    </span>
+                    <div class="min-w-0">
+                      <div class="text-[11px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                        ${mySeat && viewingSeat.seatId === mySeat.seatId ? 'Your Score Sheet' : 'Active Score Sheet'}
+                      </div>
+                      <h2 class="text-lg font-extrabold text-slate-900 dark:text-white truncate">
+                        ${escapeHtml(viewingSeat.name)}
+                      </h2>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-2">
+                    ${canSwitchSeats ? `
+                      <select
+                        id="yz-seat-switcher"
+                        aria-label="Switch scorecard player"
+                        class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                      >
+                        ${players.map((p) => `
+                          <option value="${escapeHtml(p.seatId)}" ${p.seatId === viewingSeat.seatId ? 'selected' : ''}>
+                            ${getAvatarObj(p.avatar).emoji} ${escapeHtml(p.name)}${mySeat && p.seatId === mySeat.seatId ? ' (You)' : !p.claimedByUid ? ' (Open)' : ''}
+                          </option>
+                        `).join('')}
+                      </select>
+                    ` : ''}
+                    <div class="px-3 py-1.5 rounded-2xl bg-violet-50 dark:bg-violet-950/60 border border-violet-200 dark:border-violet-800 text-right">
+                      <div class="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Match</div>
+                      <div class="text-base font-black tabular-nums text-violet-800 dark:text-violet-200 leading-tight">
+                        ${viewingPlayerStats.overallTotal}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Multi-Game Switcher Tabs -->
+                ${numGames > 1 ? `
+                  <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                    ${viewingPlayerStats.games.map((gs, gi) => {
+                      const active = gi === activeGameIdx;
+                      const done = gs.filledCount >= 13;
+                      return `
+                        <button
+                          type="button"
+                          data-yz-game-tab="${gi}"
+                          class="yz-game-tab-btn px-3.5 py-2 rounded-2xl text-xs font-extrabold shrink-0 transition flex items-center gap-1.5 ${
+                            active
+                              ? 'bg-violet-600 text-white shadow-sm'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                          }"
+                        >
+                          <span>Game ${gi + 1}</span>
+                          <span class="px-1.5 py-0.5 rounded-lg text-[11px] tabular-nums ${
+                            active ? 'bg-white/20 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200'
+                          }">
+                            ${gs.gameTotal}${done ? ' ✓' : ''}
+                          </span>
+                        </button>
+                      `;
+                    }).join('')}
+                  </div>
+                ` : ''}
+
+                ${!canScore && !isFinished ? `
+                  <div class="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-center text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    Score entry is set to Host Only in Room Settings.
+                  </div>
+                ` : ''}
+              </div>
+
+              <!-- Two-Column Responsive Scorecard Body -->
+              <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
+                <!-- UPPER SECTION (1s–6s + Running +/- Pace) -->
+                <div class="p-4 sm:p-5 space-y-3">
+                  <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Upper Section
+                    </h3>
+                    ${paceBadgeHtml}
+                  </div>
+
+                  <div class="space-y-1.5">
+                    ${YAHTZEE_UPPER_CATS.map((cat) => {
+                      const raw = activeSheet[cat.key];
+                      const isFilled = raw !== null && raw !== undefined;
+                      const val = isFilled ? Number(raw) : null;
+                      const delta = isFilled ? val - cat.par : null;
+                      const deltaBadge = isFilled
+                        ? delta > 0
+                          ? `<span class="px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-extrabold tabular-nums">+${delta}</span>`
+                          : delta < 0
+                            ? `<span class="px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 text-[11px] font-extrabold tabular-nums">${delta}</span>`
+                            : `<span class="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[11px] font-bold tabular-nums">±0</span>`
+                        : `<span class="text-[11px] font-medium text-slate-400">Par ${cat.par}</span>`;
+
+                      return `
+                        <button
+                          type="button"
+                          data-yz-upper="${cat.key}"
+                          ${canEditViewingSheet ? '' : 'disabled'}
+                          class="yz-upper-row w-full px-3.5 py-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition ${
+                            isFilled
+                              ? 'bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 hover:border-violet-400 dark:hover:border-violet-500'
+                              : 'bg-white dark:bg-slate-900 border-dashed border-slate-300 dark:border-slate-700 hover:border-violet-500 hover:bg-violet-50/40 dark:hover:bg-violet-950/30'
+                          } disabled:cursor-default"
+                        >
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <span class="text-xl leading-none">${cat.pip}</span>
+                            <div class="min-w-0">
+                              <div class="font-bold text-sm text-slate-900 dark:text-white">${cat.label}</div>
+                            </div>
+                          </div>
+                          <div class="flex items-center gap-2.5 shrink-0">
+                            ${deltaBadge}
+                            <span class="w-10 text-right font-extrabold text-base tabular-nums ${
+                              isFilled
+                                ? val === 0
+                                  ? 'text-slate-400'
+                                  : 'text-slate-900 dark:text-white'
+                                : 'text-violet-600 dark:text-violet-400 text-xs font-bold'
+                            }">
+                              ${isFilled ? val : (canEditViewingSheet ? 'Tap' : '—')}
+                            </span>
+                          </div>
+                        </button>
+                      `;
+                    }).join('')}
+                  </div>
+
+                  <!-- Upper Summary Bar -->
+                  <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 space-y-1.5 text-xs">
+                    <div class="flex items-center justify-between">
+                      <span class="font-semibold text-slate-500 dark:text-slate-400">Upper Subtotal</span>
+                      <span class="font-extrabold tabular-nums text-slate-900 dark:text-white">${activeStats.upperSubtotal} / 63</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="font-semibold text-slate-500 dark:text-slate-400">63+ Bonus</span>
+                      <span class="font-extrabold tabular-nums ${activeStats.upperBonus > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">
+                        ${activeStats.upperBonus > 0 ? '+35' : upperPointsNeeded > 0 ? `${upperPointsNeeded} to go` : '0'}
+                      </span>
+                    </div>
+                    <div class="pt-1.5 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-sm">
+                      <span class="font-extrabold text-slate-700 dark:text-slate-200">Upper Total</span>
+                      <span class="font-black tabular-nums text-violet-700 dark:text-violet-300">${activeStats.upperTotal}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- LOWER SECTION -->
+                <div class="p-4 sm:p-5 space-y-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Lower Section
+                    </h3>
+                    <span class="text-[11px] font-bold text-slate-400">${activeStats.filledCount}/13 filled</span>
+                  </div>
+
+                  <div class="space-y-1.5">
+                    ${YAHTZEE_LOWER_CATS.map((cat) => {
+                      const raw = activeSheet[cat.key];
+                      const isFilled = raw !== null && raw !== undefined;
+                      const val = isFilled ? Number(raw) : null;
+                      const defaultPts = cat.fixed ? (Number(rules[cat.ruleKey]) ?? cat.fallback) : null;
+
+                      return `
+                        <button
+                          type="button"
+                          data-yz-lower="${cat.key}"
+                          ${canEditViewingSheet ? '' : 'disabled'}
+                          class="yz-lower-row w-full px-3.5 py-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition ${
+                            isFilled
+                              ? 'bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 hover:border-violet-400 dark:hover:border-violet-500'
+                              : 'bg-white dark:bg-slate-900 border-dashed border-slate-300 dark:border-slate-700 hover:border-violet-500 hover:bg-violet-50/40 dark:hover:bg-violet-950/30'
+                          } disabled:cursor-default"
+                        >
+                          <div class="min-w-0">
+                            <div class="font-bold text-sm text-slate-900 dark:text-white">${cat.label}</div>
+                            <div class="text-[11px] text-slate-400">
+                              ${cat.fixed ? `${defaultPts} pts default` : cat.hint}
+                            </div>
+                          </div>
+                          <span class="font-extrabold text-base tabular-nums shrink-0 ${
+                            isFilled
+                              ? val === 0
+                                ? 'text-slate-400'
+                                : 'text-slate-900 dark:text-white'
+                              : 'text-violet-600 dark:text-violet-400 text-xs font-bold'
+                          }">
+                            ${isFilled ? val : (canEditViewingSheet ? (cat.fixed ? `${defaultPts} / 0` : 'Tap') : '—')}
+                          </span>
+                        </button>
+                      `;
+                    }).join('')}
+
+                    <!-- Extra Yahtzee Bonus Stepper Row -->
+                    <div class="px-3.5 py-2.5 rounded-2xl border border-amber-200/90 dark:border-amber-800/70 bg-amber-50/60 dark:bg-amber-950/25 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        id="yz-bonus-custom-btn"
+                        ${canEditViewingSheet ? '' : 'disabled'}
+                        class="text-left min-w-0 flex-1"
+                      >
+                        <div class="font-bold text-sm text-amber-900 dark:text-amber-200">Extra Yahtzee Bonus</div>
+                        <div class="text-[11px] text-amber-700/80 dark:text-amber-300/70">
+                          +${bonusUnit} each${activeSheet.yahtzeeBonusPoints !== null && activeSheet.yahtzeeBonusPoints !== undefined ? ' · Custom override' : ` · ×${activeStats.yahtzeeBonusCount}`}
+                        </div>
+                      </button>
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        ${canEditViewingSheet ? `
+                          <button type="button" id="yz-bonus-dec-btn" class="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 font-extrabold text-sm hover:bg-amber-100 active:scale-95 transition">−</button>
+                        ` : ''}
+                        <span class="min-w-[44px] text-center font-black text-sm tabular-nums text-amber-900 dark:text-amber-200">
+                          ${activeStats.yahtzeeBonusTotal > 0 ? `+${activeStats.yahtzeeBonusTotal}` : '0'}
+                        </span>
+                        ${canEditViewingSheet ? `
+                          <button type="button" id="yz-bonus-inc-btn" class="w-8 h-8 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm active:scale-95 transition">＋</button>
+                        ` : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Lower & Game Grand Total Bar -->
+                  <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 space-y-1.5 text-xs">
+                    <div class="flex items-center justify-between">
+                      <span class="font-semibold text-slate-500 dark:text-slate-400">Lower Subtotal</span>
+                      <span class="font-extrabold tabular-nums text-slate-900 dark:text-white">${activeStats.lowerSubtotal}</span>
+                    </div>
+                    <div class="pt-1.5 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-sm">
+                      <span class="font-extrabold text-slate-700 dark:text-slate-200">
+                        ${numGames > 1 ? `Game ${activeGameIdx + 1} Total` : 'Game Total'}
+                      </span>
+                      <span class="font-black text-lg tabular-nums text-violet-700 dark:text-violet-300">${activeStats.gameTotal}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          ` : ''}
+        </div>
+      `;
+
+      // Bindings
+      document.getElementById('match-rules-btn').addEventListener('click', () => {
+        if (game) openRulesInfoModal(game, rules);
+      });
+
+      const editRulesBtn = document.getElementById('match-edit-rules-btn');
+      if (editRulesBtn && game) {
+        editRulesBtn.addEventListener('click', () => openGameRulesSetupModal(game, { editingActiveMatch: true }));
+      }
+
+      const finishBtn = document.getElementById('yz-finish-match-btn');
+      if (finishBtn) {
+        finishBtn.addEventListener('click', async () => {
+          const updated = JSON.parse(JSON.stringify(state.currentRoom));
+          await finalizeMatch(updated);
+        });
+      }
+
+      const closeGameBtn = document.getElementById('match-close-game-btn');
+      if (closeGameBtn) {
+        closeGameBtn.addEventListener('click', () => openCloseGameModal());
+      }
+
+      const backLobbyBtn = document.getElementById('match-back-lobby-btn');
+      if (backLobbyBtn) {
+        backLobbyBtn.addEventListener('click', async () => {
+          const updated = { ...state.currentRoom, status: 'lobby', activeMatch: null };
+          await saveRoom(updated);
+        });
+      }
+
+      const playAgainBtn = document.getElementById('match-play-again-btn');
+      if (playAgainBtn && game) {
+        playAgainBtn.addEventListener('click', async () => {
+          await startNewMatchInRoom(game, rules);
+        });
+      }
+
+      const lobbyAfterWinBtn = document.getElementById('match-lobby-after-win-btn');
+      if (lobbyAfterWinBtn) {
+        lobbyAfterWinBtn.addEventListener('click', async () => {
+          const updated = { ...state.currentRoom, status: 'lobby', activeMatch: null };
+          await saveRoom(updated);
+        });
+      }
+
+      const seatSwitcher = document.getElementById('yz-seat-switcher');
+      if (seatSwitcher) {
+        seatSwitcher.addEventListener('change', (e) => {
+          state.yahtzeeViewingSeatId = e.target.value;
+          render();
+        });
+      }
+
+      container.querySelectorAll('.yz-game-tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.yahtzeeActiveGameIdx = parseInt(btn.getAttribute('data-yz-game-tab'), 10) || 0;
+          render();
+        });
+      });
+
+      if (canEditViewingSheet && viewingSeat) {
+        container.querySelectorAll('.yz-upper-row').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const catKey = btn.getAttribute('data-yz-upper');
+            const cat = YAHTZEE_UPPER_CATS.find((c) => c.key === catKey);
+            if (cat) openYahtzeeUpperEntryModal(viewingSeat.seatId, activeGameIdx, cat);
+          });
+        });
+
+        container.querySelectorAll('.yz-lower-row').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const catKey = btn.getAttribute('data-yz-lower');
+            const cat = YAHTZEE_LOWER_CATS.find((c) => c.key === catKey);
+            if (cat) openYahtzeeLowerEntryModal(viewingSeat.seatId, activeGameIdx, cat);
+          });
+        });
+
+        const bonusInc = document.getElementById('yz-bonus-inc-btn');
+        if (bonusInc) {
+          bonusInc.addEventListener('click', async () => {
+            const nextCount = activeStats.yahtzeeBonusCount + 1;
+            await updateYahtzeeCell(viewingSeat.seatId, activeGameIdx, {
+              yahtzeeBonusCount: nextCount,
+              yahtzeeBonusPoints: null,
+            });
+          });
+        }
+
+        const bonusDec = document.getElementById('yz-bonus-dec-btn');
+        if (bonusDec) {
+          bonusDec.addEventListener('click', async () => {
+            const nextCount = Math.max(0, activeStats.yahtzeeBonusCount - 1);
+            await updateYahtzeeCell(viewingSeat.seatId, activeGameIdx, {
+              yahtzeeBonusCount: nextCount,
+              yahtzeeBonusPoints: null,
+            });
+          });
+        }
+
+        const bonusCustom = document.getElementById('yz-bonus-custom-btn');
+        if (bonusCustom) {
+          bonusCustom.addEventListener('click', () => {
+            openYahtzeeBonusModal(viewingSeat.seatId, activeGameIdx);
+          });
+        }
+      }
+    }
+
+    // =========================================================================
     // 10. REUSABLE COMPONENTS (NUMBER PAD & SEARCHABLE EMOJI PICKER)
     // =========================================================================
-    function buildNumberPadHtml({ nextLabel = 'Next ↵', allowMathOps = true } = {}) {
+    function buildNumberPadHtml({ nextLabel = 'Next ↵', allowMathOps = true, showSignToggle = false } = {}) {
       const btnBase = 'h-12 sm:h-13 rounded-2xl font-extrabold text-lg select-none active:scale-95 transition flex items-center justify-center';
       const digitBtn = `${btnBase} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm`;
       const opBtn = `${btnBase} bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/70`;
@@ -2297,9 +3163,11 @@
 
           <button type="button" data-np="CLEAR" class="np-key ${utilBtn}">C</button>
           <button type="button" data-np="0" class="np-key ${digitBtn}">0</button>
-          ${allowMathOps
-            ? `<button type="button" data-np="×" class="np-key ${opBtn}">×</button>`
-            : `<button type="button" data-np="+" class="np-key ${opBtn}">+</button>`
+          ${showSignToggle
+            ? `<button type="button" data-np="SIGN" class="np-key ${opBtn}" aria-label="Toggle negative">±</button>`
+            : allowMathOps
+              ? `<button type="button" data-np="×" class="np-key ${opBtn}">×</button>`
+              : `<button type="button" data-np="+" class="np-key ${opBtn}">+</button>`
           }
           <button type="button" data-np="NEXT" class="np-key ${btnBase} bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm shadow-sm">${escapeHtml(nextLabel)}</button>
         </div>
@@ -2310,6 +3178,19 @@
       let expr = String(currentExpr || '');
       if (key === 'CLEAR') return '';
       if (key === 'BACK') return expr.slice(0, -1);
+
+      if (key === 'SIGN') {
+        if (!expr) return '−';
+        if (expr === '−') return '';
+        if (/[+−×]/.test(expr.slice(1))) {
+          const evaluated = evaluateScoreExpression(expr);
+          if (!Number.isNaN(evaluated)) {
+            const flipped = -evaluated;
+            return flipped < 0 ? `−${Math.abs(flipped)}` : String(flipped);
+          }
+        }
+        return expr.startsWith('−') ? expr.slice(1) : `−${expr}`;
+      }
 
       const isOp = key === '+' || key === '−' || key === '×';
       if (isOp) {
@@ -3003,6 +3884,8 @@
 
       const isGin = game.id === 'gin-rummy';
       const isScrabble = game.id === 'scrabble';
+      const isGolf = game.id === 'golf';
+      const isYahtzee = game.id === 'yahtzee';
 
       openModal(`
         <div class="p-5 sm:p-6 space-y-5">
@@ -3068,6 +3951,89 @@
                 </div>
               </label>
             ` : ''}
+
+            ${isGolf ? `
+              <div>
+                <label for="rs-golf-holes" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Number of Holes / Rounds
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    id="rs-golf-holes"
+                    type="number"
+                    min="1"
+                    max="36"
+                    step="1"
+                    value="${currentRules.totalHoles}"
+                    class="flex-1 px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-extrabold text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <div class="flex gap-1.5">
+                    ${[9, 18].map((v) => `
+                      <button type="button" data-preset-holes="${v}" class="rs-holes-preset-btn px-4 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-xs font-extrabold transition">${v} Holes</button>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+
+              <div class="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 space-y-1">
+                <div class="text-xs font-extrabold text-emerald-800 dark:text-emerald-300">⛳ Lowest Score Wins</div>
+                <p class="text-xs text-emerald-700/90 dark:text-emerald-200/80 leading-relaxed">
+                  Standings rank from lowest to highest score, and the number pad includes a <strong>±</strong> toggle for negative hole scores (Jokers, −2s, or matching bonuses).
+                </p>
+              </div>
+            ` : ''}
+
+            ${isYahtzee ? `
+              <div>
+                <label for="rs-yz-games" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Number of Games (Full Scorecards)
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    id="rs-yz-games"
+                    type="number"
+                    min="1"
+                    max="12"
+                    step="1"
+                    value="${currentRules.numGames}"
+                    class="flex-1 px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-extrabold text-base focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                  <div class="flex gap-1">
+                    ${[1, 3, 6].map((v) => `
+                      <button type="button" data-preset-yz-games="${v}" class="rs-yz-preset-btn px-3.5 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-violet-100 dark:hover:bg-violet-900/60 text-xs font-extrabold transition">${v}</button>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-2.5">
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Lower Section Point Values
+                </div>
+                <div class="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label for="rs-yz-fh" class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Full House</label>
+                    <input id="rs-yz-fh" type="number" min="0" max="500" value="${currentRules.fullHouse}" class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm" />
+                  </div>
+                  <div>
+                    <label for="rs-yz-sm" class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Small Straight</label>
+                    <input id="rs-yz-sm" type="number" min="0" max="500" value="${currentRules.smallStraight}" class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm" />
+                  </div>
+                  <div>
+                    <label for="rs-yz-lg" class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Large Straight</label>
+                    <input id="rs-yz-lg" type="number" min="0" max="500" value="${currentRules.largeStraight}" class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm" />
+                  </div>
+                  <div>
+                    <label for="rs-yz-ytz" class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Yahtzee</label>
+                    <input id="rs-yz-ytz" type="number" min="0" max="500" value="${currentRules.yahtzee}" class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm" />
+                  </div>
+                  <div class="col-span-2">
+                    <label for="rs-yz-bonus" class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Extra Yahtzee Bonus (+pts)</label>
+                    <input id="rs-yz-bonus" type="number" min="0" max="1000" value="${currentRules.yahtzeeBonus}" class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm" />
+                  </div>
+                </div>
+              </div>
+            ` : ''}
           </div>
 
           <div class="flex gap-2.5 pt-1">
@@ -3089,6 +4055,20 @@
         });
       });
 
+      document.querySelectorAll('.rs-holes-preset-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const inp = document.getElementById('rs-golf-holes');
+          if (inp) inp.value = btn.getAttribute('data-preset-holes');
+        });
+      });
+
+      document.querySelectorAll('.rs-yz-preset-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const inp = document.getElementById('rs-yz-games');
+          if (inp) inp.value = btn.getAttribute('data-preset-yz-games');
+        });
+      });
+
       document.getElementById('rs-confirm-btn').addEventListener('click', async () => {
         let rules = {};
         if (isGin) {
@@ -3098,6 +4078,17 @@
           rules = { targetScore, ginBonus, undercutBonus };
         } else if (isScrabble) {
           rules = { doubleTileTransfer: Boolean(document.getElementById('rs-double-transfer').checked) };
+        } else if (isGolf) {
+          const totalHoles = Math.min(36, Math.max(1, parseInt(document.getElementById('rs-golf-holes').value, 10) || 9));
+          rules = { totalHoles };
+        } else if (isYahtzee) {
+          const numGames = Math.min(12, Math.max(1, parseInt(document.getElementById('rs-yz-games').value, 10) || 1));
+          const fullHouse = Math.max(0, parseInt(document.getElementById('rs-yz-fh').value, 10) || 0);
+          const smallStraight = Math.max(0, parseInt(document.getElementById('rs-yz-sm').value, 10) || 0);
+          const largeStraight = Math.max(0, parseInt(document.getElementById('rs-yz-lg').value, 10) || 0);
+          const yahtzee = Math.max(0, parseInt(document.getElementById('rs-yz-ytz').value, 10) || 0);
+          const yahtzeeBonus = Math.max(0, parseInt(document.getElementById('rs-yz-bonus').value, 10) || 0);
+          rules = { numGames, fullHouse, smallStraight, largeStraight, yahtzee, yahtzeeBonus };
         }
 
         closeModal();
@@ -3105,6 +4096,17 @@
         if (editingActiveMatch && state.currentRoom?.activeMatch) {
           const updated = JSON.parse(JSON.stringify(state.currentRoom));
           updated.activeMatch.rules = rules;
+          if (isYahtzee) {
+            updated.activeMatch.yahtzeeSheets = updated.activeMatch.yahtzeeSheets || {};
+            (updated.players || []).forEach((p) => {
+              updated.activeMatch.yahtzeeSheets[p.seatId] = updated.activeMatch.yahtzeeSheets[p.seatId] || {};
+              for (let i = 0; i < rules.numGames; i++) {
+                if (!updated.activeMatch.yahtzeeSheets[p.seatId][String(i)]) {
+                  updated.activeMatch.yahtzeeSheets[p.seatId][String(i)] = createEmptyYahtzeeGame();
+                }
+              }
+            });
+          }
           await saveRoom(updated);
           showToast('Match rules updated!', 'success');
         } else {
@@ -3116,6 +4118,15 @@
     // MODAL 4: RULES OVERVIEW
     function openRulesInfoModal(game, activeRules = null) {
       const rules = { ...game.defaultRules, ...(activeRules || {}) };
+      const summaryLine =
+        game.id === 'gin-rummy'
+          ? `Current Setting: Playing to ${rules.targetScore} points · Gin +${rules.ginBonus} · Undercut +${rules.undercutBonus}`
+          : game.id === 'golf'
+            ? `Current Setting: ${rules.totalHoles} holes · Lowest total score wins`
+            : game.id === 'yahtzee'
+              ? `Current Setting: ${rules.numGames} ${rules.numGames === 1 ? 'game' : 'games'} · FH ${rules.fullHouse} · Sm ${rules.smallStraight} · Lg ${rules.largeStraight} · Ytz ${rules.yahtzee} · Bonus +${rules.yahtzeeBonus}`
+              : `Current Setting: No point cap · ${rules.doubleTileTransfer ? '2× OUT Tile Bonus' : 'Classic OUT Tile Transfer (Subtract & Add)'}`;
+
       openModal(`
         <div class="p-5 sm:p-6 space-y-4">
           <div class="flex items-center justify-between gap-2">
@@ -3127,10 +4138,7 @@
           </div>
 
           <div class="p-3.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/70 text-xs font-bold text-indigo-800 dark:text-indigo-200">
-            ${game.id === 'gin-rummy'
-              ? `Current Setting: Playing to ${rules.targetScore} points · Gin +${rules.ginBonus} · Undercut +${rules.undercutBonus}`
-              : `Current Setting: No point cap · ${rules.doubleTileTransfer ? '2× OUT Tile Bonus' : 'Classic OUT Tile Transfer (Subtract & Add)'}`
-            }
+            ${escapeHtml(summaryLine)}
           </div>
 
           <ul class="space-y-2.5 text-sm text-slate-600 dark:text-slate-300">
@@ -3234,6 +4242,8 @@
 
       const isGin = match.gameId === 'gin-rummy';
       const isScrabble = match.gameId === 'scrabble';
+      const isGolf = match.gameId === 'golf';
+      const unitLabel = isGolf ? 'Hole' : 'Round';
       const ginBonus = match.rules?.ginBonus ?? 25;
       const undercutBonus = match.rules?.undercutBonus ?? 25;
 
@@ -3274,7 +4284,7 @@
                   ${escapeHtml(match.gameName)}
                 </span>
                 <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">
-                  ${isEdit ? `Round ${roundNumber} Scores` : `Log Round ${roundNumber}`}
+                  ${isEdit ? `${unitLabel} ${roundNumber} Scores` : `Log ${unitLabel} ${roundNumber}`}
                 </h2>
               </div>
               <button type="button" id="lr-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-sm">✕</button>
@@ -3343,9 +4353,10 @@
                 ${isGin && undercutBonus > 0 ? `<button type="button" data-quick-bonus="${undercutBonus}" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+${undercutBonus} Undercut</button>` : ''}
                 ${isScrabble ? `<button type="button" data-quick-bonus="50" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+50 Bingo</button>` : ''}
                 ${isScrabble && !isEdit ? `<button type="button" id="lr-switch-out-btn" class="px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-xs font-bold text-amber-800 dark:text-amber-300 active:scale-95 transition">🏁 OUT</button>` : ''}
+                ${isGolf ? `<span class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Tip: tap ± for negative scores</span>` : ''}
               </div>
               <button type="button" id="lr-toggle-note-btn" class="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
-                ${showNoteField ? 'Hide Note' : '+ Add Round Note'}
+                ${showNoteField ? 'Hide Note' : `+ Add ${unitLabel} Note`}
               </button>
             </div>
 
@@ -3355,12 +4366,12 @@
                 type="text"
                 maxlength="60"
                 value="${escapeHtml(noteText)}"
-                placeholder="${isScrabble ? 'e.g., QUARTZ on triple word' : 'e.g., Alex went Gin!'}"
+                placeholder="${isScrabble ? 'e.g., QUARTZ on triple word' : isGolf ? 'e.g., Pair of Kings + Joker' : 'e.g., Alex went Gin!'}"
                 class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             ` : ''}
 
-            ${buildNumberPadHtml({ nextLabel: 'Save ✓' })}
+            ${buildNumberPadHtml({ nextLabel: 'Save ✓', showSignToggle: isGolf })}
           </div>
         `, { maxWidth: 'max-w-md' });
 
@@ -3430,7 +4441,7 @@
 
           const anyEntered = Object.values(enteredMap).some((v) => v !== null);
           if (!isEdit && !anyEntered) {
-            showToast('Enter at least one score on the number pad (even 0) to log this round.', 'warning');
+            showToast(`Enter at least one score on the number pad (even 0) to log this ${unitLabel.toLowerCase()}.`, 'warning');
             return;
           }
 
@@ -3488,8 +4499,25 @@
             }
           }
 
+          if (updated.activeMatch.gameId === 'golf') {
+            const totalHoles = Math.max(1, parseInt(updated.activeMatch.rules?.totalHoles, 10) || 9);
+            if (latestRounds.length >= totalHoles) {
+              const finalHole = latestRounds[totalHoles - 1];
+              const allFilled = (updated.players || []).every(
+                (p) => finalHole?.scores?.[p.seatId] !== null && finalHole?.scores?.[p.seatId] !== undefined
+              );
+              if (allFilled) {
+                await finalizeMatch(updated);
+                return;
+              }
+            }
+          }
+
           await saveRoom(updated);
-          showToast(targetRoundIndex !== -1 ? `Round ${roundNumber} updated!` : `Round ${roundNumber} logged!`, 'success');
+          showToast(
+            targetRoundIndex !== -1 ? `${unitLabel} ${roundNumber} updated!` : `${unitLabel} ${roundNumber} logged!`,
+            'success'
+          );
         };
 
         const handlePadPress = (key) => {
@@ -3524,7 +4552,7 @@
           } else if (e.key === '-') {
             e.preventDefault();
             handlePadPress('−');
-          } else if (e.key === '*') {
+          } else if (e.key === '*' && !isGolf) {
             e.preventDefault();
             handlePadPress('×');
           } else if (e.key === 'Backspace') {
@@ -3754,10 +4782,494 @@
       renderOutModal();
     }
 
+    // MODAL 7B: YAHTZEE UPPER SECTION ENTRY (1s–6s Quick Tap + Custom)
+    function openYahtzeeUpperEntryModal(seatId, gameIdx, cat) {
+      const room = state.currentRoom;
+      const match = room?.activeMatch;
+      if (!room || !match) return;
+
+      const sheet = getYahtzeeGameSheet(match, seatId, gameIdx);
+      const currentVal = sheet[cat.key];
+      const isFilled = currentVal !== null && currentVal !== undefined;
+      let customMode = false;
+      let expr = isFilled ? String(currentVal) : '';
+
+      const renderUpperModal = () => {
+        const evalVal = expr ? evaluateScoreExpression(expr) : null;
+
+        openModal(`
+          <div class="p-5 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2.5">
+                <span class="text-3xl leading-none">${cat.pip}</span>
+                <div>
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                    Upper Section · Par ${cat.par}
+                  </span>
+                  <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${cat.label} (${cat.short})</h2>
+                </div>
+              </div>
+              <button type="button" id="yzu-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+            </div>
+
+            ${!customMode ? `
+              <div class="grid grid-cols-3 gap-2">
+                ${[0, 1, 2, 3, 4, 5].map((count) => {
+                  const pts = count * cat.face;
+                  const delta = pts - cat.par;
+                  const isSelected = isFilled && Number(currentVal) === pts;
+                  const deltaText = delta > 0 ? `+${delta}` : delta === 0 ? 'Par' : `${delta}`;
+                  const deltaClass =
+                    delta > 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : delta === 0
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : 'text-rose-500 dark:text-rose-400';
+                  return `
+                    <button
+                      type="button"
+                      data-yzu-pts="${pts}"
+                      class="yzu-pick-btn p-3 rounded-2xl border-2 text-center transition active:scale-95 ${
+                        isSelected
+                          ? 'border-violet-600 bg-violet-50 dark:bg-violet-950/60'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 hover:border-violet-400'
+                      }"
+                    >
+                      <div class="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                        ${count === 0 ? 'Scratch' : `${count}× ${cat.face}`}
+                      </div>
+                      <div class="text-2xl font-black tabular-nums text-slate-900 dark:text-white my-0.5">${pts}</div>
+                      <div class="text-[11px] font-extrabold tabular-nums ${deltaClass}">${deltaText}</div>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+
+              <div class="flex items-center gap-2 pt-1">
+                <button type="button" id="yzu-custom-btn" class="flex-1 py-2.5 px-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold transition">
+                  Custom Points
+                </button>
+                ${isFilled ? `
+                  <button type="button" id="yzu-clear-btn" class="py-2.5 px-4 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 text-xs font-bold transition">
+                    Clear
+                  </button>
+                ` : ''}
+              </div>
+            ` : `
+              <div class="space-y-3">
+                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border-2 border-violet-500 flex items-center justify-between">
+                  <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Custom ${cat.label} Score</span>
+                  <span class="text-2xl font-black tabular-nums ${evalVal !== null && Number.isNaN(evalVal) ? 'text-rose-500' : 'text-slate-900 dark:text-white'}">
+                    ${expr ? escapeHtml(expr) : '<span class="text-slate-400">0</span>'}
+                  </span>
+                </div>
+                ${buildNumberPadHtml({ nextLabel: 'Save ✓', allowMathOps: true })}
+                <div class="flex items-center justify-between gap-2">
+                  <button type="button" id="yzu-back-quick-btn" class="text-xs font-bold text-violet-600 dark:text-violet-400">← Back to quick picks</button>
+                  ${isFilled ? `<button type="button" id="yzu-clear-btn" class="text-xs font-bold text-rose-600 dark:text-rose-400">Clear Score</button>` : ''}
+                </div>
+              </div>
+            `}
+          </div>
+        `, { maxWidth: 'max-w-sm' });
+
+        document.getElementById('yzu-close-btn').addEventListener('click', closeModal);
+
+        const clearBtn = document.getElementById('yzu-clear-btn');
+        if (clearBtn) {
+          clearBtn.addEventListener('click', async () => {
+            closeModal();
+            await updateYahtzeeCell(seatId, gameIdx, { [cat.key]: null });
+          });
+        }
+
+        if (!customMode) {
+          document.querySelectorAll('.yzu-pick-btn').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              const pts = parseInt(btn.getAttribute('data-yzu-pts'), 10) || 0;
+              closeModal();
+              await updateYahtzeeCell(seatId, gameIdx, { [cat.key]: pts });
+            });
+          });
+          document.getElementById('yzu-custom-btn').addEventListener('click', () => {
+            customMode = true;
+            renderUpperModal();
+          });
+        } else {
+          document.getElementById('yzu-back-quick-btn').addEventListener('click', () => {
+            customMode = false;
+            renderUpperModal();
+          });
+
+          const saveCustom = async () => {
+            const parsed = expr ? evaluateScoreExpression(expr) : 0;
+            if (Number.isNaN(parsed) || parsed < 0) {
+              showToast('Please enter a valid non-negative score.', 'error');
+              return;
+            }
+            closeModal();
+            await updateYahtzeeCell(seatId, gameIdx, { [cat.key]: parsed });
+          };
+
+          const handlePad = (key) => {
+            if (key === 'NEXT') {
+              saveCustom();
+              return;
+            }
+            expr = applyNumberPadKey(expr, key);
+            renderUpperModal();
+          };
+
+          document.querySelectorAll('.np-key').forEach((btn) => {
+            btn.addEventListener('click', () => handlePad(btn.getAttribute('data-np')));
+          });
+
+          activeModalKeydownHandler = (e) => {
+            if (/^[0-9]$/.test(e.key)) {
+              e.preventDefault();
+              handlePad(e.key);
+            } else if (e.key === '+') {
+              e.preventDefault();
+              handlePad('+');
+            } else if (e.key === '-') {
+              e.preventDefault();
+              handlePad('−');
+            } else if (e.key === '*') {
+              e.preventDefault();
+              handlePad('×');
+            } else if (e.key === 'Backspace') {
+              e.preventDefault();
+              handlePad('BACK');
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              handlePad('NEXT');
+            } else if (e.key === 'Escape') {
+              closeModal();
+            }
+          };
+          window.addEventListener('keydown', activeModalKeydownHandler);
+        }
+      };
+
+      renderUpperModal();
+    }
+
+    // MODAL 7C: YAHTZEE LOWER SECTION ENTRY (One-Tap Fixed or Keypad Entry + Custom Override)
+    function openYahtzeeLowerEntryModal(seatId, gameIdx, cat) {
+      const room = state.currentRoom;
+      const match = room?.activeMatch;
+      if (!room || !match) return;
+
+      const rules = match.rules || {};
+      const sheet = getYahtzeeGameSheet(match, seatId, gameIdx);
+      const currentVal = sheet[cat.key];
+      const isFilled = currentVal !== null && currentVal !== undefined;
+      const defaultPts = cat.fixed ? (Number(rules[cat.ruleKey]) ?? cat.fallback) : null;
+      const bonusUnit = getYahtzeeBonusUnit(rules);
+
+      let showKeypad = !cat.fixed;
+      let expr = isFilled ? String(currentVal) : '';
+
+      const renderLowerModal = () => {
+        const evalVal = expr ? evaluateScoreExpression(expr) : null;
+
+        openModal(`
+          <div class="p-5 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <span class="text-[11px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                  Lower Section · Game ${gameIdx + 1}
+                </span>
+                <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${cat.label}</h2>
+              </div>
+              <button type="button" id="yzl-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+            </div>
+
+            ${cat.fixed && !showKeypad ? `
+              <div class="space-y-2.5">
+                <button type="button" id="yzl-default-btn" class="w-full py-4 px-5 rounded-2xl bg-violet-600 hover:bg-violet-500 active:scale-[0.99] text-white font-extrabold text-base shadow-sm transition flex items-center justify-between">
+                  <span>Score ${cat.label}</span>
+                  <span class="px-2.5 py-0.5 rounded-xl bg-white/20 text-sm tabular-nums">${defaultPts} pts</span>
+                </button>
+
+                ${cat.key === 'yahtzee' && isFilled && Number(currentVal) > 0 ? `
+                  <button type="button" id="yzl-add-extra-cell-btn" class="w-full py-3.5 px-5 rounded-2xl bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 hover:bg-amber-200/70 text-amber-900 dark:text-amber-200 font-extrabold text-sm transition flex items-center justify-between">
+                    <span>Add Extra Yahtzee to Cell</span>
+                    <span class="tabular-nums">${Number(currentVal) + bonusUnit} pts (+${bonusUnit})</span>
+                  </button>
+                ` : ''}
+
+                <div class="grid grid-cols-2 gap-2">
+                  <button type="button" id="yzl-scratch-btn" class="py-3 px-4 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs sm:text-sm transition">
+                    0 (Scratch)
+                  </button>
+                  <button type="button" id="yzl-custom-btn" class="py-3 px-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 font-bold text-xs sm:text-sm transition">
+                    Custom Points
+                  </button>
+                </div>
+
+                ${isFilled ? `
+                  <button type="button" id="yzl-clear-btn" class="w-full py-2.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold text-xs transition">
+                    Clear Score
+                  </button>
+                ` : ''}
+              </div>
+            ` : `
+              <div class="space-y-3">
+                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border-2 border-violet-500 flex items-center justify-between gap-2">
+                  <span class="text-xs font-bold text-slate-500 dark:text-slate-400">${cat.hint}</span>
+                  <div class="text-right">
+                    <div class="text-2xl font-black tabular-nums ${evalVal !== null && Number.isNaN(evalVal) ? 'text-rose-500' : 'text-slate-900 dark:text-white'}">
+                      ${expr ? escapeHtml(expr) : '<span class="text-slate-400">0</span>'}
+                    </div>
+                    ${/[+−×]/.test(expr.slice(1)) ? `
+                      <div class="text-[11px] font-bold tabular-nums ${Number.isNaN(evalVal) ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}">
+                        ${Number.isNaN(evalVal) ? 'Check math' : `= ${evalVal}`}
+                      </div>
+                    ` : ''}
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <div class="flex items-center gap-1.5">
+                    <button type="button" id="yzl-scratch-btn" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-xs font-bold transition">0 (Scratch)</button>
+                    ${cat.fixed ? `<button type="button" id="yzl-default-btn" class="px-3 py-1.5 rounded-xl bg-violet-50 dark:bg-violet-950/60 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 text-xs font-bold transition">Default (${defaultPts})</button>` : ''}
+                  </div>
+                  ${isFilled ? `<button type="button" id="yzl-clear-btn" class="text-xs font-bold text-rose-600 dark:text-rose-400">Clear</button>` : ''}
+                </div>
+
+                ${buildNumberPadHtml({ nextLabel: 'Save ✓', allowMathOps: true })}
+              </div>
+            `}
+          </div>
+        `, { maxWidth: 'max-w-sm' });
+
+        document.getElementById('yzl-close-btn').addEventListener('click', closeModal);
+
+        const defaultBtn = document.getElementById('yzl-default-btn');
+        if (defaultBtn) {
+          defaultBtn.addEventListener('click', async () => {
+            closeModal();
+            await updateYahtzeeCell(seatId, gameIdx, { [cat.key]: defaultPts });
+          });
+        }
+
+        const addExtraBtn = document.getElementById('yzl-add-extra-cell-btn');
+        if (addExtraBtn) {
+          addExtraBtn.addEventListener('click', async () => {
+            closeModal();
+            await updateYahtzeeCell(seatId, gameIdx, { [cat.key]: Number(currentVal) + bonusUnit });
+          });
+        }
+
+        const scratchBtn = document.getElementById('yzl-scratch-btn');
+        if (scratchBtn) {
+          scratchBtn.addEventListener('click', async () => {
+            closeModal();
+            await updateYahtzeeCell(seatId, gameIdx, { [cat.key]: 0 });
+          });
+        }
+
+        const clearBtn = document.getElementById('yzl-clear-btn');
+        if (clearBtn) {
+          clearBtn.addEventListener('click', async () => {
+            closeModal();
+            await updateYahtzeeCell(seatId, gameIdx, { [cat.key]: null });
+          });
+        }
+
+        const customBtn = document.getElementById('yzl-custom-btn');
+        if (customBtn) {
+          customBtn.addEventListener('click', () => {
+            showKeypad = true;
+            renderLowerModal();
+          });
+        }
+
+        if (showKeypad) {
+          const saveKeypad = async () => {
+            const parsed = expr ? evaluateScoreExpression(expr) : 0;
+            if (Number.isNaN(parsed) || parsed < 0) {
+              showToast('Please enter a valid non-negative score.', 'error');
+              return;
+            }
+            closeModal();
+            await updateYahtzeeCell(seatId, gameIdx, { [cat.key]: parsed });
+          };
+
+          const handlePad = (key) => {
+            if (key === 'NEXT') {
+              saveKeypad();
+              return;
+            }
+            expr = applyNumberPadKey(expr, key);
+            renderLowerModal();
+          };
+
+          document.querySelectorAll('.np-key').forEach((btn) => {
+            btn.addEventListener('click', () => handlePad(btn.getAttribute('data-np')));
+          });
+
+          activeModalKeydownHandler = (e) => {
+            if (/^[0-9]$/.test(e.key)) {
+              e.preventDefault();
+              handlePad(e.key);
+            } else if (e.key === '+') {
+              e.preventDefault();
+              handlePad('+');
+            } else if (e.key === '-') {
+              e.preventDefault();
+              handlePad('−');
+            } else if (e.key === '*') {
+              e.preventDefault();
+              handlePad('×');
+            } else if (e.key === 'Backspace') {
+              e.preventDefault();
+              handlePad('BACK');
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              handlePad('NEXT');
+            } else if (e.key === 'Escape') {
+              closeModal();
+            }
+          };
+          window.addEventListener('keydown', activeModalKeydownHandler);
+        }
+      };
+
+      renderLowerModal();
+    }
+
+    // MODAL 7D: YAHTZEE EXTRA BONUS CUSTOM OVERRIDE
+    function openYahtzeeBonusModal(seatId, gameIdx) {
+      const room = state.currentRoom;
+      const match = room?.activeMatch;
+      if (!room || !match) return;
+
+      const rules = match.rules || {};
+      const bonusUnit = getYahtzeeBonusUnit(rules);
+      const sheet = getYahtzeeGameSheet(match, seatId, gameIdx);
+      const stats = computeYahtzeeGameStats(sheet, rules);
+      let expr = stats.yahtzeeBonusTotal > 0 ? String(stats.yahtzeeBonusTotal) : '';
+
+      const renderBonusModal = () => {
+        const evalVal = expr ? evaluateScoreExpression(expr) : 0;
+
+        openModal(`
+          <div class="p-5 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <span class="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                  Game ${gameIdx + 1} · Default +${bonusUnit} each
+                </span>
+                <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Extra Yahtzee Bonus</h2>
+              </div>
+              <button type="button" id="yzb-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400 flex items-center justify-between">
+              <span class="text-xs font-bold text-amber-800 dark:text-amber-200">Total Bonus Points</span>
+              <span class="text-2xl font-black tabular-nums ${Number.isNaN(evalVal) ? 'text-rose-500' : 'text-amber-900 dark:text-amber-100'}">
+                ${expr ? escapeHtml(expr) : '0'}
+              </span>
+            </div>
+
+            <div class="flex items-center gap-1.5 flex-wrap">
+              ${[1, 2, 3].map((n) => `
+                <button type="button" data-yzb-mult="${n}" class="yzb-mult-btn px-3 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 text-xs font-bold">
+                  ×${n} (+${n * bonusUnit})
+                </button>
+              `).join('')}
+              <button type="button" id="yzb-reset-btn" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold">Reset to 0</button>
+            </div>
+
+            ${buildNumberPadHtml({ nextLabel: 'Save ✓', allowMathOps: true })}
+          </div>
+        `, { maxWidth: 'max-w-sm' });
+
+        document.getElementById('yzb-close-btn').addEventListener('click', closeModal);
+
+        document.querySelectorAll('.yzb-mult-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const count = parseInt(btn.getAttribute('data-yzb-mult'), 10) || 0;
+            closeModal();
+            await updateYahtzeeCell(seatId, gameIdx, {
+              yahtzeeBonusCount: count,
+              yahtzeeBonusPoints: null,
+            });
+          });
+        });
+
+        document.getElementById('yzb-reset-btn').addEventListener('click', async () => {
+          closeModal();
+          await updateYahtzeeCell(seatId, gameIdx, {
+            yahtzeeBonusCount: 0,
+            yahtzeeBonusPoints: null,
+          });
+        });
+
+        const saveBonus = async () => {
+          const parsed = expr ? evaluateScoreExpression(expr) : 0;
+          if (Number.isNaN(parsed) || parsed < 0) {
+            showToast('Enter a valid non-negative bonus amount.', 'error');
+            return;
+          }
+          closeModal();
+          await updateYahtzeeCell(seatId, gameIdx, {
+            yahtzeeBonusCount: bonusUnit > 0 ? Math.round(parsed / bonusUnit) : 0,
+            yahtzeeBonusPoints: parsed,
+          });
+        };
+
+        const handlePad = (key) => {
+          if (key === 'NEXT') {
+            saveBonus();
+            return;
+          }
+          expr = applyNumberPadKey(expr, key);
+          renderBonusModal();
+        };
+
+        document.querySelectorAll('.np-key').forEach((btn) => {
+          btn.addEventListener('click', () => handlePad(btn.getAttribute('data-np')));
+        });
+
+        activeModalKeydownHandler = (e) => {
+          if (/^[0-9]$/.test(e.key)) {
+            e.preventDefault();
+            handlePad(e.key);
+          } else if (e.key === '+') {
+            e.preventDefault();
+            handlePad('+');
+          } else if (e.key === '-') {
+            e.preventDefault();
+            handlePad('−');
+          } else if (e.key === 'Backspace') {
+            e.preventDefault();
+            handlePad('BACK');
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            handlePad('NEXT');
+          } else if (e.key === 'Escape') {
+            closeModal();
+          }
+        };
+        window.addEventListener('keydown', activeModalKeydownHandler);
+      };
+
+      renderBonusModal();
+    }
+
     // MODAL 8: CLOSE GAME (Save for Later vs Two-Step Discard)
     function openCloseGameModal() {
       const match = state.currentRoom?.activeMatch;
       if (!match) return;
+      const progressSummary =
+        match.gameId === 'yahtzee'
+          ? 'your current scorecard progress'
+          : match.gameId === 'golf'
+            ? `your ${(match.rounds || []).length} logged holes`
+            : `your ${(match.rounds || []).length} logged rounds`;
 
       openModal(`
         <div class="p-5 sm:p-6 space-y-5">
@@ -3770,7 +5282,7 @@
           </div>
 
           <p class="text-xs text-slate-500 dark:text-slate-400">
-            Choose whether to pause and save your ${(match.rounds || []).length} logged rounds for later, or permanently discard this match.
+            Choose whether to pause and save ${progressSummary} for later, or permanently discard this match.
           </p>
 
           <div class="space-y-2.5">
