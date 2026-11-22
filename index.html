@@ -42,19 +42,19 @@
   <!-- Top Navigation Header -->
   <header class="sticky top-0 z-30 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80">
     <div class="max-w-5xl mx-auto px-3 sm:px-5 h-16 flex items-center justify-between gap-2">
-      <!-- Brand / Home Trigger -->
+      <!-- Brand / Room Name & Home Trigger -->
       <button id="header-home-btn" class="flex items-center gap-2.5 text-left group min-w-0">
-        <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition shrink-0">
-          <!-- Inline SVG Game Board Icon -->
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
-            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
-            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
-            <path d="M17.5 14v7M14 17.5h7"></path>
-          </svg>
+        <div class="w-10 h-10 rounded-2xl overflow-hidden bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition shrink-0">
+          <img
+            src="./icon.png"
+            alt="Game Board"
+            class="w-full h-full object-cover"
+            onerror="this.classList.add('hidden'); this.nextElementSibling.classList.remove('hidden');"
+          />
+          <span class="hidden text-xl leading-none" aria-hidden="true">🎲</span>
         </div>
         <div class="min-w-0">
-          <div class="font-extrabold text-base sm:text-lg leading-tight tracking-tight text-slate-900 dark:text-white truncate">
+          <div id="header-brand-title" class="font-extrabold text-base sm:text-lg leading-tight tracking-tight text-slate-900 dark:text-white truncate">
             Game Board
           </div>
           <div id="connection-status-pill" class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
@@ -64,29 +64,21 @@
         </div>
       </button>
 
-      <!-- Active Room Pill (Center, hidden on Landing) -->
-      <div id="header-room-controls" class="hidden items-center gap-1.5 sm:gap-2">
-        <button id="header-copy-code-btn" title="Copy 4-character Room Code" class="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition">
-          <span class="hidden sm:inline text-[10px] font-bold uppercase tracking-wider opacity-75">Room</span>
-          <span id="header-room-code-text" class="font-extrabold text-sm tracking-widest">----</span>
-          <svg class="w-3.5 h-3.5 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-          </svg>
-        </button>
-        <button id="header-players-btn" title="Players & Room Settings" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="9" cy="7" r="4"></circle>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-          </svg>
-          <span id="header-player-count">0</span>
-        </button>
-      </div>
-
-      <!-- Right Utility Actions: Copy PWA Link, Profile, Theme Toggle -->
+      <!-- Right Utility Actions: Players (in room), Copy Invite Link, Profile -->
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <!-- Active Room Players / Settings Button (hidden on Landing) -->
+        <div id="header-room-controls" class="hidden items-center">
+          <button id="header-players-btn" title="Players & Room Settings" class="flex items-center gap-1.5 px-2.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span id="header-player-count">0</span>
+          </button>
+        </div>
+
         <!-- Quick Copy PWA Link Button -->
         <button
           id="header-copy-link-btn"
@@ -100,28 +92,10 @@
           <span id="header-copy-link-label" class="hidden sm:inline">Copy Link</span>
         </button>
 
-        <!-- Current Player Profile Chip -->
-        <button id="header-profile-btn" class="hidden items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold transition">
+        <!-- Current Player Profile & Theme Chip (Always Accessible) -->
+        <button id="header-profile-btn" title="Profile, Game Piece & Dark Mode" class="flex items-center gap-1.5 px-2.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold transition">
           <span id="header-profile-emoji" class="text-base leading-none">♟️</span>
-          <span id="header-profile-name" class="hidden md:inline max-w-[100px] truncate">Player</span>
-        </button>
-
-        <!-- Dark Mode Toggle -->
-        <button id="theme-toggle-btn" aria-label="Toggle dark mode" class="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-amber-300 flex items-center justify-center transition">
-          <svg id="icon-moon" class="w-5 h-5 block dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-          </svg>
-          <svg id="icon-sun" class="w-5 h-5 hidden dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="5"></circle>
-            <line x1="12" y1="1" x2="12" y2="3"></line>
-            <line x1="12" y1="21" x2="12" y2="23"></line>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-            <line x1="1" y1="12" x2="3" y2="12"></line>
-            <line x1="21" y1="12" x2="23" y2="12"></line>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-          </svg>
+          <span id="header-profile-name" class="hidden md:inline max-w-[100px] truncate">Profile</span>
         </button>
       </div>
     </div>
@@ -1372,34 +1346,36 @@
     // 9. MAIN RENDER ROUTER & HEADER SYNC
     // =========================================================================
     function updateHeaderUI() {
+      const brandTitle = document.getElementById('header-brand-title');
       const roomControls = document.getElementById('header-room-controls');
-      const codeText = document.getElementById('header-room-code-text');
       const countText = document.getElementById('header-player-count');
-      const profileBtn = document.getElementById('header-profile-btn');
       const profileEmoji = document.getElementById('header-profile-emoji');
       const profileName = document.getElementById('header-profile-name');
       const copyLinkLabel = document.getElementById('header-copy-link-label');
 
       if (state.currentRoom && state.view !== 'landing') {
+        if (brandTitle) {
+          const customName = (state.currentRoom.name || '').trim();
+          brandTitle.textContent = customName || `Room ${state.currentRoom.code}`;
+        }
         roomControls.classList.remove('hidden');
         roomControls.classList.add('flex');
-        codeText.textContent = state.currentRoom.code;
         countText.textContent = String((state.currentRoom.players || []).length);
         if (copyLinkLabel) copyLinkLabel.textContent = 'Invite Link';
       } else {
+        if (brandTitle) {
+          brandTitle.textContent = 'Game Board';
+        }
         roomControls.classList.add('hidden');
         roomControls.classList.remove('flex');
         if (copyLinkLabel) copyLinkLabel.textContent = 'Copy Link';
       }
 
-      if (state.currentUser.name) {
-        profileBtn.classList.remove('hidden');
-        profileBtn.classList.add('flex');
+      if (profileEmoji) {
         profileEmoji.textContent = getAvatarObj(state.currentUser.avatar).emoji;
-        profileName.textContent = state.currentUser.name;
-      } else {
-        profileBtn.classList.add('hidden');
-        profileBtn.classList.remove('flex');
+      }
+      if (profileName) {
+        profileName.textContent = state.currentUser.name || 'Profile';
       }
     }
 
@@ -1453,7 +1429,7 @@
                         <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">${escapeHtml(statusText)}</span>
                       </div>
                       <div class="text-sm font-bold text-slate-900 dark:text-white truncate">
-                        Host: ${escapeHtml(hostPlayer?.name || 'Table Host')}
+                        ${escapeHtml((r.name || '').trim() || `Host: ${hostPlayer?.name || 'Table Host'}`)}
                       </div>
                       <div class="text-[11px] text-slate-400 dark:text-slate-500">
                         ${pCount} ${pCount === 1 ? 'player' : 'players'} seated
@@ -1469,8 +1445,10 @@
 
       container.innerHTML = `
         <div class="space-y-8 max-w-3xl mx-auto">
+          ${rejoinSectionHtml}
+
           <!-- Hero Intro -->
-          <div class="text-center space-y-3 pt-3">
+          <div class="text-center space-y-3 ${rejoinRooms.length > 0 ? 'pt-1' : 'pt-3'}">
             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
               ✨ Real-Time Shared Scorepad
             </span>
@@ -1522,8 +1500,6 @@
               </form>
             </div>
           </div>
-
-          ${rejoinSectionHtml}
         </div>
       `;
 
@@ -1657,7 +1633,7 @@
                 <div class="text-xl font-black tracking-[0.2em] leading-none mt-0.5">${escapeHtml(room.code)}</div>
               </div>
               <div class="min-w-0">
-                <h1 class="text-lg font-extrabold text-slate-900 dark:text-white truncate">Game Room Lobby</h1>
+                <h1 class="text-lg font-extrabold text-slate-900 dark:text-white truncate">${escapeHtml((room.name || '').trim() || 'Game Room Lobby')}</h1>
                 <p class="text-xs text-slate-500 dark:text-slate-400">
                   Share the invite link or 4-letter code so friends can join on their phones.
                 </p>
@@ -2523,12 +2499,13 @@
     // 11. MODALS (IDENTITY, GAME DETAILS, RULES, LOG ROUND, SCRABBLE OUT, ETC.)
     // =========================================================================
 
-    // MODAL 1: IDENTITY / SEAT CLAIMING / PROFILE LOGIN
+    // MODAL 1: IDENTITY / SEAT CLAIMING / PROFILE LOGIN (Tabbed: Details vs. Game Piece)
     function openJoinOrCreateIdentityModal({ mode = 'create', targetRoom = null, profileOnly = false } = {}) {
       const unclaimedSeats = mode === 'join' && targetRoom
         ? (targetRoom.players || []).filter((p) => !p.claimedByUid)
         : [];
 
+      let modalTab = 'details'; // 'details' | 'piece'
       let selectedSeatId = unclaimedSeats.length > 0 ? unclaimedSeats[0].seatId : '__new__';
       let authTab = state.currentUser.isGuest ? 'guest' : 'email';
       let nameVal = state.currentUser.name || (selectedSeatId !== '__new__' ? unclaimedSeats[0].name : '');
@@ -2537,106 +2514,168 @@
 
       const renderIdentityModal = () => {
         const title = profileOnly
-          ? 'Your Player Profile'
+          ? 'Your Profile'
           : mode === 'create'
             ? 'Set Up Your Seat'
-            : `Join Room ${targetRoom?.code || ''}`;
+            : `Join ${(targetRoom?.name || '').trim() || `Room ${targetRoom?.code || ''}`}`;
+        const currentPieceObj = getAvatarObj(avatarVal);
+        const isDark = state.theme === 'dark';
 
         openModal(`
           <div class="p-5 sm:p-6 space-y-5">
             <div class="flex items-center justify-between gap-2">
               <div>
                 <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-                  ${profileOnly ? 'Profile & Piece' : mode === 'create' ? 'New Table' : 'Room Entry'}
+                  ${profileOnly ? 'Profile & Settings' : mode === 'create' ? 'New Table' : 'Room Entry'}
                 </span>
                 <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(title)}</h2>
               </div>
               <button type="button" id="id-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-sm">✕</button>
             </div>
 
-            ${unclaimedSeats.length > 0 ? `
-              <div class="space-y-2">
-                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Claim a Seat Created by the Host
-                </label>
-                <div class="grid grid-cols-2 gap-2">
-                  ${unclaimedSeats.map((s) => {
-                    const av = getAvatarObj(s.avatar);
-                    const active = selectedSeatId === s.seatId;
-                    return `
-                      <button type="button" data-claim-seat="${escapeHtml(s.seatId)}" class="id-seat-btn p-2.5 rounded-2xl border-2 text-left flex items-center gap-2 transition ${
-                        active
+            <!-- Main Modal Section Tabs: Name & Details vs. Game Piece -->
+            <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
+              <button type="button" data-modal-tab="details" class="id-main-tab-btn py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
+                modalTab === 'details'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }">
+                <span>👤 Name &amp; Info</span>
+              </button>
+              <button type="button" data-modal-tab="piece" class="id-main-tab-btn py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
+                modalTab === 'piece'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }">
+                <span class="text-base leading-none">${currentPieceObj.emoji}</span>
+                <span>Game Piece</span>
+              </button>
+            </div>
+
+            ${modalTab === 'details' ? `
+              <div class="space-y-4">
+                ${unclaimedSeats.length > 0 ? `
+                  <div class="space-y-2">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Claim a Seat Created by the Host
+                    </label>
+                    <div class="grid grid-cols-2 gap-2">
+                      ${unclaimedSeats.map((s) => {
+                        const av = getAvatarObj(s.avatar);
+                        const active = selectedSeatId === s.seatId;
+                        return `
+                          <button type="button" data-claim-seat="${escapeHtml(s.seatId)}" class="id-seat-btn p-2.5 rounded-2xl border-2 text-left flex items-center gap-2 transition ${
+                            active
+                              ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50'
+                              : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                          }">
+                            <span class="text-lg">${av.emoji}</span>
+                            <span class="font-bold text-sm truncate text-slate-900 dark:text-white">${escapeHtml(s.name)}</span>
+                          </button>
+                        `;
+                      }).join('')}
+                      <button type="button" data-claim-seat="__new__" class="id-seat-btn p-2.5 rounded-2xl border-2 text-left flex items-center gap-2 transition ${
+                        selectedSeatId === '__new__'
                           ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50'
                           : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
                       }">
-                        <span class="text-lg">${av.emoji}</span>
-                        <span class="font-bold text-sm truncate text-slate-900 dark:text-white">${escapeHtml(s.name)}</span>
+                        <span class="text-lg">➕</span>
+                        <span class="font-bold text-sm text-slate-900 dark:text-white">New Seat</span>
                       </button>
-                    `;
-                  }).join('')}
-                  <button type="button" data-claim-seat="__new__" class="id-seat-btn p-2.5 rounded-2xl border-2 text-left flex items-center gap-2 transition ${
-                    selectedSeatId === '__new__'
-                      ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50'
-                      : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                    </div>
+                  </div>
+                ` : ''}
+
+                <!-- Guest vs Email Profile Switcher -->
+                <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80">
+                  <button type="button" data-auth-tab="guest" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
+                    authTab === 'guest'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400'
                   }">
-                    <span class="text-lg">➕</span>
-                    <span class="font-bold text-sm text-slate-900 dark:text-white">New Seat</span>
+                    Continue as Guest
+                  </button>
+                  <button type="button" data-auth-tab="email" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
+                    authTab === 'email'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400'
+                  }">
+                    Name &amp; Email Login
                   </button>
                 </div>
-              </div>
-            ` : ''}
 
-            <!-- Guest vs Email Profile Switcher -->
-            <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
-              <button type="button" data-auth-tab="guest" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
-                authTab === 'guest'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400'
-              }">
-                Continue as Guest
-              </button>
-              <button type="button" data-auth-tab="email" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
-                authTab === 'email'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400'
-              }">
-                Name &amp; Email Login
-              </button>
-            </div>
-
-            <div class="space-y-3">
-              <div>
-                <label for="id-name-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Display Name</label>
-                <input
-                  id="id-name-input"
-                  type="text"
-                  maxlength="24"
-                  value="${escapeHtml(nameVal)}"
-                  placeholder="e.g., Alex"
-                  class="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              ${authTab === 'email' ? `
-                <div>
-                  <label for="id-email-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Email (for ongoing history &amp; favorites)</label>
-                  <div class="flex gap-2">
+                <div class="space-y-3">
+                  <div>
+                    <label for="id-name-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Display Name</label>
                     <input
-                      id="id-email-input"
-                      type="email"
-                      value="${escapeHtml(emailVal)}"
-                      placeholder="you@example.com"
-                      class="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      id="id-name-input"
+                      type="text"
+                      maxlength="24"
+                      value="${escapeHtml(nameVal)}"
+                      placeholder="e.g., Alex"
+                      class="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
-                    <button type="button" id="id-lookup-email-btn" class="px-3.5 py-2 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs shrink-0 hover:bg-indigo-100 transition">
-                      Load
+                  </div>
+
+                  ${authTab === 'email' ? `
+                    <div>
+                      <label for="id-email-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Email (for ongoing history &amp; favorites)</label>
+                      <div class="flex gap-2">
+                        <input
+                          id="id-email-input"
+                          type="email"
+                          value="${escapeHtml(emailVal)}"
+                          placeholder="you@example.com"
+                          class="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <button type="button" id="id-lookup-email-btn" class="px-3.5 py-2 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs shrink-0 hover:bg-indigo-100 transition">
+                          Load
+                        </button>
+                      </div>
+                    </div>
+                  ` : ''}
+
+                  <!-- Compact Selected Game Piece Shortcut -->
+                  <button type="button" id="id-go-piece-btn" class="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500 flex items-center justify-between gap-3 transition">
+                    <div class="flex items-center gap-3">
+                      <span class="w-10 h-10 rounded-xl flex items-center justify-center text-2xl ${currentPieceObj.color}">${currentPieceObj.emoji}</span>
+                      <div class="text-left">
+                        <div class="text-xs font-extrabold text-slate-900 dark:text-white">Your Game Piece</div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400">Tap to browse all emojis or roll random</div>
+                      </div>
+                    </div>
+                    <span class="text-xs font-bold text-indigo-600 dark:text-indigo-400 shrink-0">Change →</span>
+                  </button>
+
+                  <!-- Appearance / Dark Mode Toggle -->
+                  <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5">
+                      <span class="w-9 h-9 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-base">
+                        ${isDark ? '🌙' : '☀️'}
+                      </span>
+                      <div>
+                        <div class="text-xs font-extrabold text-slate-900 dark:text-white">Dark Mode</div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400">${isDark ? 'Dark theme active' : 'Light theme active'}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      id="id-theme-toggle-btn"
+                      role="switch"
+                      aria-checked="${isDark ? 'true' : 'false'}"
+                      class="relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${isDark ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'}"
+                    >
+                      <span class="inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${isDark ? 'translate-x-6' : 'translate-x-1'}"></span>
                     </button>
                   </div>
                 </div>
-              ` : ''}
-
-              ${buildEmojiPickerHtml(avatarVal, 'id-ep')}
-            </div>
+              </div>
+            ` : `
+              <!-- Game Piece Tab -->
+              <div class="space-y-3">
+                ${buildEmojiPickerHtml(avatarVal, 'id-ep')}
+              </div>
+            `}
 
             <button type="button" id="id-submit-btn" class="w-full py-3.5 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm shadow-sm transition">
               ${profileOnly ? 'Save Profile' : mode === 'create' ? 'Create Room & Enter →' : selectedSeatId !== '__new__' ? 'Claim Seat & Join →' : 'Join Room →'}
@@ -2653,13 +2692,44 @@
 
         document.getElementById('id-close-btn').addEventListener('click', closeModal);
 
-        bindEmojiPickerEvents({
-          prefix: 'id-ep',
-          initialValue: avatarVal,
-          onSelect: (emojiStr) => {
-            avatarVal = emojiStr;
-          },
+        document.querySelectorAll('.id-main-tab-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            captureFields();
+            modalTab = btn.getAttribute('data-modal-tab');
+            renderIdentityModal();
+          });
         });
+
+        const goPieceBtn = document.getElementById('id-go-piece-btn');
+        if (goPieceBtn) {
+          goPieceBtn.addEventListener('click', () => {
+            captureFields();
+            modalTab = 'piece';
+            renderIdentityModal();
+          });
+        }
+
+        const modalThemeBtn = document.getElementById('id-theme-toggle-btn');
+        if (modalThemeBtn) {
+          modalThemeBtn.addEventListener('click', () => {
+            captureFields();
+            applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+            persistUserPreferences();
+            renderIdentityModal();
+          });
+        }
+
+        if (modalTab === 'piece') {
+          bindEmojiPickerEvents({
+            prefix: 'id-ep',
+            initialValue: avatarVal,
+            onSelect: (emojiStr) => {
+              avatarVal = emojiStr;
+              const tabEmoji = document.querySelector('[data-modal-tab="piece"] span:first-child');
+              if (tabEmoji) tabEmoji.textContent = emojiStr;
+            },
+          });
+        }
 
         document.querySelectorAll('.id-seat-btn').forEach((btn) => {
           btn.addEventListener('click', () => {
@@ -2710,18 +2780,22 @@
         document.getElementById('id-submit-btn').addEventListener('click', async () => {
           captureFields();
           const cleanName = nameVal.trim();
-          if (!cleanName) {
+          if (!cleanName && !profileOnly) {
+            modalTab = 'details';
+            renderIdentityModal();
             showToast('Please enter your display name.', 'warning');
             return;
           }
 
-          let profileId = null;
-          let cleanEmail = '';
+          let profileId = state.currentUser.profileId || null;
+          let cleanEmail = state.currentUser.email || '';
           const isGuest = authTab === 'guest';
 
-          if (!isGuest) {
+          if (!isGuest && (cleanName || emailVal.trim())) {
             cleanEmail = emailVal.trim().toLowerCase();
             if (!cleanEmail || !cleanEmail.includes('@')) {
+              modalTab = 'details';
+              renderIdentityModal();
               showToast('Please enter a valid email address or switch to Guest.', 'warning');
               return;
             }
@@ -2734,14 +2808,17 @@
             state.currentUser.favorites = mergedFavs;
             await saveUserProfile({
               profileId,
-              name: cleanName,
+              name: cleanName || state.currentUser.name || 'Player',
               email: cleanEmail,
               avatar: avatarVal,
               favorites: mergedFavs,
             });
+          } else if (isGuest) {
+            profileId = null;
+            cleanEmail = '';
           }
 
-          state.currentUser.name = cleanName;
+          if (cleanName) state.currentUser.name = cleanName;
           state.currentUser.email = cleanEmail;
           state.currentUser.profileId = profileId;
           state.currentUser.avatar = avatarVal;
@@ -2754,7 +2831,7 @@
               const updated = JSON.parse(JSON.stringify(state.currentRoom));
               const mySeat = (updated.players || []).find((p) => p.claimedByUid === state.currentUser.uid);
               if (mySeat) {
-                mySeat.name = cleanName;
+                if (cleanName) mySeat.name = cleanName;
                 mySeat.avatar = avatarVal;
                 mySeat.profileId = profileId;
                 await saveRoom(updated);
@@ -3188,7 +3265,6 @@
 
       const renderLogRoundUI = () => {
         const activePlayer = players[activeIdx];
-        const isLastPlayer = activeIdx === players.length - 1;
 
         openModal(`
           <div class="p-4 sm:p-6 space-y-4">
@@ -3266,6 +3342,7 @@
                 ${isGin && ginBonus > 0 ? `<button type="button" data-quick-bonus="${ginBonus}" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-xs font-bold text-indigo-700 dark:text-indigo-300 active:scale-95 transition">+${ginBonus} Gin</button>` : ''}
                 ${isGin && undercutBonus > 0 ? `<button type="button" data-quick-bonus="${undercutBonus}" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+${undercutBonus} Undercut</button>` : ''}
                 ${isScrabble ? `<button type="button" data-quick-bonus="50" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+50 Bingo</button>` : ''}
+                ${isScrabble && !isEdit ? `<button type="button" id="lr-switch-out-btn" class="px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-xs font-bold text-amber-800 dark:text-amber-300 active:scale-95 transition">🏁 OUT</button>` : ''}
               </div>
               <button type="button" id="lr-toggle-note-btn" class="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
                 ${showNoteField ? 'Hide Note' : '+ Add Round Note'}
@@ -3283,18 +3360,7 @@
               />
             ` : ''}
 
-            ${buildNumberPadHtml({ nextLabel: isLastPlayer ? 'Save ✓' : 'Next ↵' })}
-
-            <div class="flex flex-col sm:flex-row gap-2">
-              <button type="button" id="lr-save-btn" class="flex-1 py-3.5 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-bold text-sm shadow-sm transition">
-                Save Round ${roundNumber}
-              </button>
-              ${isScrabble && !isEdit ? `
-                <button type="button" id="lr-switch-out-btn" class="py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm transition">
-                  🏁 Someone Went OUT
-                </button>
-              ` : ''}
-            </div>
+            ${buildNumberPadHtml({ nextLabel: 'Save ✓' })}
           </div>
         `, { maxWidth: 'max-w-md' });
 
@@ -3430,12 +3496,7 @@
           captureNote();
           const sid = activePlayer.seatId;
           if (key === 'NEXT') {
-            if (activeIdx < players.length - 1) {
-              activeIdx += 1;
-              renderLogRoundUI();
-            } else {
-              submitRound();
-            }
+            submitRound();
             return;
           }
           exprMap[sid] = applyNumberPadKey(exprMap[sid], key);
@@ -3451,8 +3512,6 @@
         if (switchOutBtn) {
           switchOutBtn.addEventListener('click', () => openScrabbleOutModal());
         }
-
-        document.getElementById('lr-save-btn').addEventListener('click', submitRound);
 
         activeModalKeydownHandler = (e) => {
           if (document.activeElement && document.activeElement.id === 'lr-note') return;
@@ -3594,11 +3653,7 @@
               <span class="text-base font-black text-emerald-700 dark:text-emerald-300 tabular-nums">+${outBonus} pts</span>
             </div>
 
-            ${buildNumberPadHtml({ nextLabel: isLastOther ? 'Finish ✓' : 'Next ↵' })}
-
-            <button type="button" id="so-finalize-btn" class="w-full py-3.5 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm shadow-sm transition">
-              Apply Tile Transfer &amp; Declare Winner →
-            </button>
+            ${buildNumberPadHtml({ nextLabel: isLastOther ? 'Save ✓' : 'Next ↵' })}
           </div>
         `, { maxWidth: 'max-w-md' });
 
@@ -3669,8 +3724,6 @@
         document.querySelectorAll('.np-key').forEach((btn) => {
           btn.addEventListener('click', () => handlePad(btn.getAttribute('data-np')));
         });
-
-        document.getElementById('so-finalize-btn').addEventListener('click', finalizeOut);
 
         activeModalKeydownHandler = (e) => {
           if (/^[0-9]$/.test(e.key)) {
@@ -3930,13 +3983,13 @@
           claimedByUid: null,
           profileId: null,
         });
-        await saveRoom(updated);
         closeModal();
-        showToast(`Added seat for ${name}!`, 'success');
+        await saveRoom(updated);
+        showToast(`Seat added for ${name}!`, 'success');
       });
     }
 
-    // MODAL 12: ROOM SETTINGS (Host Transfer, Scoring Permissions, Copy Invite Link, Close Room)
+    // MODAL 12: ROOM SETTINGS (Room Name, Host Transfer, Scoring Permissions, Copy Invite Link, Close Room)
     function openRoomSettingsModal() {
       const room = state.currentRoom;
       if (!room) return;
@@ -3966,6 +4019,24 @@
           </div>
 
           ${host ? `
+            <!-- Room Name -->
+            <div class="space-y-2">
+              <label for="set-room-name-input" class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Room Name</label>
+              <div class="flex gap-2">
+                <input
+                  id="set-room-name-input"
+                  type="text"
+                  maxlength="28"
+                  value="${escapeHtml(room.name || '')}"
+                  placeholder="Room ${escapeHtml(room.code)}"
+                  class="flex-1 min-w-0 px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button id="set-save-room-name-btn" class="px-4 py-2.5 rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-bold text-xs shrink-0">
+                  Save
+                </button>
+              </div>
+            </div>
+
             <!-- Scoring Permissions -->
             <div class="space-y-2">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Who Can Log Scores?</label>
@@ -4028,6 +4099,18 @@
       document.getElementById('set-copy-link-btn').addEventListener('click', () => {
         handleQuickCopyAppLink(true);
       });
+
+      const saveRoomNameBtn = document.getElementById('set-save-room-name-btn');
+      if (saveRoomNameBtn) {
+        saveRoomNameBtn.addEventListener('click', async () => {
+          const inp = document.getElementById('set-room-name-input');
+          const nextName = (inp ? inp.value : '').trim();
+          const updated = JSON.parse(JSON.stringify(state.currentRoom));
+          updated.name = nextName;
+          await saveRoom(updated);
+          showToast(nextName ? `Room renamed to "${nextName}"!` : `Room name reset to Room ${room.code}.`, 'success');
+        });
+      }
 
       document.querySelectorAll('.set-perm-btn').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -4092,19 +4175,8 @@
     }
 
     function bindGlobalEvents() {
-      document.getElementById('theme-toggle-btn').addEventListener('click', () => {
-        applyTheme(state.theme === 'dark' ? 'light' : 'dark');
-        persistUserPreferences();
-      });
-
       document.getElementById('header-copy-link-btn').addEventListener('click', () => {
         handleQuickCopyAppLink(true);
-      });
-
-      document.getElementById('header-copy-code-btn').addEventListener('click', () => {
-        if (!state.currentRoomCode) return;
-        copyTextToClipboard(state.currentRoomCode);
-        showToast(`Room code ${state.currentRoomCode} copied!`, 'success');
       });
 
       document.getElementById('header-players-btn').addEventListener('click', () => {
