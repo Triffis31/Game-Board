@@ -840,70 +840,77 @@
     }
 
     async function initFirebase() {
-      try {
-        let firebaseConfig = CUSTOM_FIREBASE_CONFIG;
-        if (!firebaseConfig && typeof __firebase_config !== 'undefined' && __firebase_config) {
-          firebaseConfig = typeof __firebase_config === 'string'
-            ? JSON.parse(__firebase_config)
-            : __firebase_config;
-        }
+  try {
+    let firebaseConfig = CUSTOM_FIREBASE_CONFIG;
+    if (!firebaseConfig && typeof __firebase_config !== 'undefined' && __firebase_config) {
+      firebaseConfig = typeof __firebase_config === 'string'
+        ? JSON.parse(__firebase_config)
+        : __firebase_config;
+    }
 
-        if (!firebaseConfig || !firebaseConfig.apiKey) {
-          isLocalFallback = true;
-          state.currentUser.uid = generateId('local_u');
-          updateConnectionBadge('local', 'Local Session Mode');
-          render();
-          handlePendingInviteParam();
-          return;
-        }
+    if (!firebaseConfig || !firebaseConfig.apiKey) {
+      isLocalFallback = true;
+      state.currentUser.uid = generateId('local_u');
+      updateConnectionBadge('local', 'Local Session Mode');
+      render();
+      handlePendingInviteParam();
+      return;
+    }
 
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
+    const app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
 
-        // Authenticate BEFORE any Firestore queries.
-        // Use Anonymous Auth when connected to a custom Firebase project so Canvas tokens don't conflict.
-        if (!CUSTOM_FIREBASE_CONFIG && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+    // Authenticate BEFORE any Firestore queries.
+    // Use Anonymous Auth when connected to a custom Firebase project so Canvas tokens don't conflict.
+    if (!CUSTOM_FIREBASE_CONFIG && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+      await signInWithCustomToken(auth, __initial_auth_token);
+    } else {
+      await signInAnonymously(auth);
+    }
 
-        fbUser = auth.currentUser;
-        if (!fbUser) {
-          await new Promise((resolve) => {
-            const unsub = onAuthStateChanged(auth, (u) => {
-              if (u) {
-                fbUser = u;
-                unsub();
-                resolve();
-              }
-            });
-          });
-        }
+    fbUser = auth.currentUser;
+    if (!fbUser) {
+      await new Promise((resolve) => {
+        const unsub = onAuthStateChanged(auth, (u) => {
+          if (u) {
+            fbUser = u;
+            unsub();
+            resolve();
+          }
+        });
+      });
+    }
 
-        state.currentUser.uid = fbUser.uid;
-        updateConnectionBadge('ok', 'Live Sync Ready');
+    state.currentUser.uid = fbUser.uid;
+    updateConnectionBadge('ok', 'Live Sync Ready');
+    await loadUserPreferencesFromStore();
+    subscribeOpenRooms();
+    subscribeMatchHistory();
+    subscribeSavedMatches();
+    render();
 
-        await loadUserPreferencesFromStore();
-        subscribeOpenRooms();
-        subscribeMatchHistory();
-        subscribeSavedMatches();
-        render();
-        handlePendingInviteParam();
-      } catch (err) {
-        console.error('Firebase initialization failed, falling back to local session:', err);
-        isLocalFallback = true;
-        state.currentUser.uid = state.currentUser.uid || generateId('local_u');
-        if (err?.code === 'auth/operation-not-allowed' || err?.code === 'auth/admin-restricted-operation') {
-          updateConnectionBadge('warn', 'Enable Anonymous Auth');
-          showToast('Enable Anonymous Sign-In in Firebase Console → Authentication to sync live.', 'warning');
-        } else {
-          updateConnectionBadge('warn', 'Offline Session Mode');
-        }
-        render();
+    if (state.pendingInviteCode) {
+      await handlePendingInviteParam();
+    } else {
+      const savedRoom = localStorage.getItem('gb_active_room');
+      if (savedRoom) {
+        subscribeRoom(savedRoom);
       }
     }
+  } catch (err) {
+    console.error('Firebase initialization failed, falling back to local session:', err);
+    isLocalFallback = true;
+    state.currentUser.uid = state.currentUser.uid || generateId('local_u');
+    if (err?.code === 'auth/operation-not-allowed' || err?.code === 'auth/admin-restricted-operation') {
+      updateConnectionBadge('warn', 'Enable Anonymous Auth');
+      showToast('Enable Anonymous Sign-In in Firebase Console → Authentication to sync live.', 'warning');
+    } else {
+      updateConnectionBadge('warn', 'Offline Session Mode');
+    }
+    render();
+  }
+}
 
     function subscribeOpenRooms() {
       if (isLocalFallback || !fbUser) return;
@@ -980,68 +987,78 @@
     }
 
     function subscribeRoom(roomCode) {
-      if (state.roomUnsubscribe) {
-        state.roomUnsubscribe();
-        state.roomUnsubscribe = null;
-      }
+  if (state.roomUnsubscribe) {
+    state.roomUnsubscribe();
+    state.roomUnsubscribe = null;
+  }
+  const cleanCode = String(roomCode || '').replace(/\s+/g, '').toUpperCase();
+  state.currentRoomCode = cleanCode;
+  rememberRoomCode(cleanCode);
+  localStorage.setItem('gb_active_room', cleanCode);
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', cleanCode);
+    window.history.replaceState({}, '', url.toString());
+  } catch {}
 
-      const cleanCode = String(roomCode || '').replace(/\s+/g, '').toUpperCase();
-      state.currentRoomCode = cleanCode;
-      rememberRoomCode(cleanCode);
+  if (isLocalFallback) {
+    const localRoom = localStore.rooms[cleanCode];
+    if (!localRoom || localRoom.status === 'closed') {
+      leaveRoomLocal();
+      return;
+    }
+    state.currentRoom = JSON.parse(JSON.stringify(localRoom));
+    state.view = state.currentRoom.activeMatch ? 'match' : 'lobby';
+    render();
+    return;
+  }
 
-      if (isLocalFallback) {
-        const localRoom = localStore.rooms[cleanCode];
-        if (!localRoom || localRoom.status === 'closed') {
-          leaveRoomLocal();
-          return;
-        }
-        state.currentRoom = JSON.parse(JSON.stringify(localRoom));
-        state.view = state.currentRoom.activeMatch ? 'match' : 'lobby';
-        render();
+  if (!fbUser) return;
+  state.roomUnsubscribe = onSnapshot(
+    getRoomDoc(cleanCode),
+    (docSnap) => {
+      if (!docSnap.exists()) {
+        forgetRoomCode(cleanCode);
+        showToast('This room no longer exists.', 'warning');
+        leaveRoomLocal();
         return;
       }
-
-      if (!fbUser) return;
-
-      state.roomUnsubscribe = onSnapshot(
-        getRoomDoc(cleanCode),
-        (docSnap) => {
-          if (!docSnap.exists()) {
-            forgetRoomCode(cleanCode);
-            showToast('This room no longer exists.', 'warning');
-            leaveRoomLocal();
-            return;
-          }
-          const data = docSnap.data();
-          if (data.status === 'closed') {
-            forgetRoomCode(cleanCode);
-            showToast(`Room ${cleanCode} was closed by the host.`, 'info');
-            leaveRoomLocal();
-            return;
-          }
-          state.currentRoom = data;
-          state.view = data.activeMatch ? 'match' : 'lobby';
-          render();
-        },
-        (err) => {
-          console.error('Room listener error:', err);
-          showToast('Lost connection to room. Reconnecting...', 'error');
-        }
-      );
+      const data = docSnap.data();
+      if (data.status === 'closed') {
+        forgetRoomCode(cleanCode);
+        showToast(`Room ${cleanCode} was closed by the host.`, 'info');
+        leaveRoomLocal();
+        return;
+      }
+      state.currentRoom = data;
+      state.view = data.activeMatch ? 'match' : 'lobby';
+      render();
+    },
+    (err) => {
+      console.error('Room listener error:', err);
+      showToast('Lost connection to room. Reconnecting...', 'error');
     }
+  );
+}
 
     function leaveRoomLocal() {
-      if (state.roomUnsubscribe) {
-        state.roomUnsubscribe();
-        state.roomUnsubscribe = null;
-      }
-      state.currentRoomCode = null;
-      state.currentRoom = null;
-      state.yahtzeeActiveGameIdx = 0;
-      state.yahtzeeViewingSeatId = null;
-      state.view = 'landing';
-      render();
-    }
+  if (state.roomUnsubscribe) {
+    state.roomUnsubscribe();
+    state.roomUnsubscribe = null;
+  }
+  state.currentRoomCode = null;
+  state.currentRoom = null;
+  state.yahtzeeActiveGameIdx = 0;
+  state.yahtzeeViewingSeatId = null;
+  state.view = 'landing';
+  localStorage.removeItem('gb_active_room');
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    window.history.replaceState({}, '', url.toString());
+  } catch {}
+  render();
+}
 
     // =========================================================================
     // 6. DATA LAYER (Room, Profile, History & Saved Match CRUD)
@@ -1059,6 +1076,32 @@
       const data = snap.data();
       return data && data.status !== 'closed' ? data : null;
     }
+
+
+    async function syncCurrentRoomNow({ silent = true } = {}) {
+  if (!state.currentRoomCode || isLocalFallback || !fbUser) return state.currentRoom;
+  try {
+    const fresh = await fetchRoom(state.currentRoomCode);
+    if (fresh) {
+      state.currentRoom = fresh;
+      state.view = fresh.activeMatch ? 'match' : 'lobby';
+      render();
+      if (!silent) showToast('Scores synced!', 'success');
+      return fresh;
+    }
+  } catch (err) {
+    console.warn('Manual room sync failed:', err);
+    if (!silent) showToast('Could not refresh scores. Check connection.', 'error');
+  }
+  return state.currentRoom;
+}
+
+// Auto-pull whenever the phone wakes up or you switch back to the PWA
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.currentRoomCode) {
+    syncCurrentRoomNow({ silent: true });
+  }
+});
 
     async function saveRoom(roomObj) {
       const payload = {
@@ -2167,405 +2210,410 @@
     // 9C. VIEW: ACTIVE / FINISHED MATCH SCOREBOARD
     // =========================================================================
     function renderMatchView(container) {
-      const room = state.currentRoom;
-      const match = room.activeMatch;
-      if (match.gameId === 'yahtzee') {
-        renderYahtzeeMatchView(container);
-        return;
-      }
+  const room = state.currentRoom;
+  const match = room.activeMatch;
+  if (match.gameId === 'yahtzee') {
+    renderYahtzeeMatchView(container);
+    return;
+  }
+  const game = GAME_CATALOG.find((g) => g.id === match.gameId);
+  const host = isHost(room);
+  const canScore = canCurrentUserScore(room);
+  const isFinished = room.status === 'finished';
+  const isGin = match.gameId === 'gin-rummy';
+  const isScrabble = match.gameId === 'scrabble';
+  const isGolf = match.gameId === 'golf';
+  const unitLabel = isGolf ? 'Hole' : 'Round';
+  const unitLabelPlural = isGolf ? 'holes' : 'rounds';
+  const unitLabelShort = isGolf ? 'Hole' : 'Rnd';
+  const totalHoles = isGolf ? Math.max(1, parseInt(match.rules?.totalHoles, 10) || 9) : null;
+  const players = room.players || [];
+  const rounds = match.rounds || [];
+  const standings = computeStandings(room);
+  const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+  const targetScore = isGin ? (match.rules?.targetScore || 100) : null;
+  const winnerSet = new Set(match.winnerSeatIds || []);
 
-      const game = GAME_CATALOG.find((g) => g.id === match.gameId);
-      const host = isHost(room);
-      const canScore = canCurrentUserScore(room);
-      const isFinished = room.status === 'finished';
-      const isGin = match.gameId === 'gin-rummy';
-      const isScrabble = match.gameId === 'scrabble';
-      const isGolf = match.gameId === 'golf';
-      const unitLabel = isGolf ? 'Hole' : 'Round';
-      const unitLabelPlural = isGolf ? 'holes' : 'rounds';
-      const unitLabelShort = isGolf ? 'Hole' : 'Rnd';
-      const totalHoles = isGolf ? Math.max(1, parseInt(match.rules?.totalHoles, 10) || 9) : null;
+  // Collaborative round progress detection (disabled for Scrabble's freeform per-player turns)
+  const mySeat = players.find((p) => p.claimedByUid && p.claimedByUid === state.currentUser.uid) || null;
+  const lastStandardRound = lastRound && lastRound.type === 'standard' ? lastRound : null;
+  const lastRoundNumber = rounds.length;
+  const pendingSeatsOnLastRound = !isScrabble && lastStandardRound
+    ? players.filter((p) => lastStandardRound.scores?.[p.seatId] === null || lastStandardRound.scores?.[p.seatId] === undefined)
+    : [];
+  const currentUserPendingLastRound = Boolean(
+    !isScrabble &&
+    !isFinished &&
+    lastStandardRound &&
+    mySeat &&
+    (lastStandardRound.scores?.[mySeat.seatId] === null || lastStandardRound.scores?.[mySeat.seatId] === undefined)
+  );
+  const displayRoundNum = lastStandardRound && pendingSeatsOnLastRound.length > 0 ? lastRoundNumber : rounds.length + 1;
+  const canLogNextHole = !isGolf || rounds.length < totalHoles;
 
-      const players = room.players || [];
-      const rounds = match.rounds || [];
-      const standings = computeStandings(room);
-      const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
-      const targetScore = isGin ? (match.rules?.targetScore || 100) : null;
-      const winnerSet = new Set(match.winnerSeatIds || []);
+  const ruleBadgeText = isGin
+    ? `Playing to ${targetScore} pts`
+    : isGolf
+    ? `${totalHoles}-hole match · Lowest score wins`
+    : match.rules?.doubleTileTransfer
+    ? 'No cap · 2× OUT Tile Transfer'
+    : 'No cap · Tap OUT when tiles run out';
 
-      // Collaborative round progress detection
-      const mySeat = players.find((p) => p.claimedByUid && p.claimedByUid === state.currentUser.uid) || null;
-      const lastStandardRound = lastRound && lastRound.type === 'standard' ? lastRound : null;
-      const lastRoundNumber = rounds.length;
-      const pendingSeatsOnLastRound = lastStandardRound
-        ? players.filter((p) => lastStandardRound.scores?.[p.seatId] === null || lastStandardRound.scores?.[p.seatId] === undefined)
-        : [];
-      const currentUserPendingLastRound = Boolean(
-        !isFinished &&
-        lastStandardRound &&
-        mySeat &&
-        (lastStandardRound.scores?.[mySeat.seatId] === null || lastStandardRound.scores?.[mySeat.seatId] === undefined)
-      );
-      const displayRoundNum = lastStandardRound && pendingSeatsOnLastRound.length > 0 ? lastRoundNumber : rounds.length + 1;
-      const canLogNextHole = !isGolf || rounds.length < totalHoles;
+  const winnerNames = standings.filter((s) => winnerSet.has(s.seatId)).map((s) => s.name);
 
-      const ruleBadgeText = isGin
-        ? `Playing to ${targetScore} pts`
-        : isGolf
-          ? `${totalHoles}-hole match · Lowest score wins`
-          : match.rules?.doubleTileTransfer
-            ? 'No cap · 2× OUT Tile Transfer'
-            : 'No cap · Tap OUT when tiles run out';
-
-      const winnerNames = standings.filter((s) => winnerSet.has(s.seatId)).map((s) => s.name);
-
-      container.innerHTML = `
-        <div class="space-y-5">
-          <!-- Match Header -->
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div class="flex items-center gap-2 flex-wrap">
-                <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(match.gameName)}</h1>
-                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                  isFinished
-                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
-                }">
-                  ${isFinished ? 'Finished' : isGolf ? `Hole ${Math.min(displayRoundNum, totalHoles)} of ${totalHoles}` : `Round ${displayRoundNum}`}
-                </span>
-              </div>
-              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(ruleBadgeText)}</p>
-            </div>
-
-            <div class="flex items-center gap-2 flex-wrap">
-              <button id="match-rules-btn" class="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 text-xs font-bold transition">
-                Rules
-              </button>
-              ${host && !isFinished ? `
-                <button id="match-edit-rules-btn" class="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 text-xs font-bold transition">
-                  Edit Rules
-                </button>
-                <button id="match-close-game-btn" class="px-3.5 py-2 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-bold transition">
-                  Close Game
-                </button>
-              ` : ''}
-              ${host && isFinished ? `
-                <button id="match-back-lobby-btn" class="px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold transition">
-                  ← Lobby
-                </button>
-              ` : ''}
-            </div>
+  container.innerHTML = `
+    <div class="space-y-5">
+      <!-- Match Header -->
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(match.gameName)}</h1>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${
+              isFinished
+                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
+            }">
+              ${isFinished ? 'Finished' : isGolf ? `Hole ${Math.min(displayRoundNum, totalHoles)} of ${totalHoles}` : isScrabble ? 'In Progress' : `Round ${displayRoundNum}`}
+            </span>
           </div>
-
-          <!-- Winner Banner (when finished) -->
-          ${isFinished ? `
-            <div class="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-white shadow-soft flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div class="space-y-1">
-                <div class="text-xs font-extrabold uppercase tracking-widest opacity-90">🏆 Match Complete</div>
-                <div class="text-2xl font-black">${escapeHtml(winnerNames.join(' & ') || 'Winner')} Wins!</div>
-                <p class="text-xs sm:text-sm text-amber-50">Final results have been saved to your table’s match history.</p>
-              </div>
-              ${host ? `
-                <div class="flex items-center gap-2 shrink-0">
-                  <button id="match-play-again-btn" class="px-4 py-2.5 rounded-2xl bg-white text-slate-900 hover:bg-amber-50 font-extrabold text-xs shadow-sm transition">
-                    Play Again
-                  </button>
-                  <button id="match-lobby-after-win-btn" class="px-4 py-2.5 rounded-2xl bg-black/20 hover:bg-black/30 text-white font-bold text-xs transition">
-                    Choose New Game
-                  </button>
-                </div>
-              ` : ''}
-            </div>
-          ` : ''}
-
-          <!-- Live Standings Grid -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            ${standings.map((p, idx) => {
-              const av = getAvatarObj(p.avatar);
-              const isWinner = isFinished && winnerSet.has(p.seatId);
-              const isLeader = !isFinished && idx === 0 && (isGolf ? rounds.length > 0 : p.total > 0);
-              const rawLast = lastRound ? lastRound.scores?.[p.seatId] : undefined;
-              const isPendingLast = !isFinished && Boolean(lastStandardRound) && (rawLast === null || rawLast === undefined);
-              const lastDelta = rawLast !== null && rawLast !== undefined ? Number(rawLast) : null;
-              const pct = targetScore ? Math.min(100, Math.max(0, Math.round((p.total / targetScore) * 100))) : null;
-              const deltaGood = isGolf ? (lastDelta !== null && lastDelta <= 0) : (lastDelta !== null && lastDelta > 0);
-
-              return `
-                <div class="p-4 rounded-3xl bg-white dark:bg-slate-900 border-2 ${
-                  isWinner
-                    ? 'border-amber-400 shadow-soft'
-                    : isLeader
-                      ? 'border-indigo-400 dark:border-indigo-500 shadow-sm'
-                      : 'border-slate-200 dark:border-slate-800'
-                } space-y-3">
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-2.5 min-w-0">
-                      <span class="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${av.color}">${av.emoji}</span>
-                      <div class="min-w-0">
-                        <div class="font-extrabold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(p.name)}</div>
-                        <div class="text-[11px] font-semibold text-slate-400">
-                          ${isWinner ? '🏆 Winner' : `#${idx + 1} Place`}
-                        </div>
-                      </div>
-                    </div>
-                    ${isPendingLast ? `
-                      <span class="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
-                        ${unitLabelShort} ${lastRoundNumber} Pending
-                      </span>
-                    ` : lastDelta !== null && (isGolf || lastDelta !== 0) ? `
-                      <span class="px-2 py-0.5 rounded-lg text-xs font-extrabold tabular-nums ${
-                        deltaGood
-                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                          : isGolf
-                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
-                      }">
-                        ${lastDelta > 0 ? `+${lastDelta}` : lastDelta}
-                      </span>
-                    ` : ''}
-                  </div>
-
-                  <div class="flex items-baseline justify-between">
-                    <div class="text-3xl font-extrabold tabular-nums text-slate-900 dark:text-white">${p.total}</div>
-                    ${targetScore ? `<span class="text-xs font-semibold text-slate-400">/ ${targetScore}</span>` : '<span class="text-xs font-semibold text-slate-400">pts</span>'}
-                  </div>
-
-                  ${pct !== null ? `
-                    <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div class="h-full rounded-full transition-all duration-300 ${isWinner ? 'bg-amber-400' : 'bg-indigo-600 dark:bg-indigo-400'}" style="width: ${pct}%"></div>
-                    </div>
-                  ` : ''}
-                </div>
-              `;
-            }).join('')}
-          </div>
-
-          <!-- Primary Action Controls (when playing) -->
-          ${!isFinished ? `
-            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              ${canScore ? `
-                ${currentUserPendingLastRound ? `
-                  <button id="match-log-my-pending-btn" class="flex-1 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-soft transition flex items-center justify-center gap-2">
-                    <span>＋ Log Your ${unitLabel} ${lastRoundNumber} Score</span>
-                  </button>
-                  ${canLogNextHole ? `
-                    <button id="match-log-round-btn" class="py-4 px-5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold text-sm transition flex items-center justify-center gap-2">
-                      <span>Start ${unitLabel} ${rounds.length + 1}</span>
-                    </button>
-                  ` : ''}
-                ` : `
-                  ${canLogNextHole ? `
-                    <button id="match-log-round-btn" class="flex-1 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-soft transition flex items-center justify-center gap-2">
-                      <span>＋ Log ${unitLabel} ${rounds.length + 1}</span>
-                    </button>
-                  ` : ''}
-                  ${pendingSeatsOnLastRound.length > 0 ? `
-                    <button id="match-fill-pending-btn" class="${canLogNextHole ? '' : 'flex-1'} py-4 px-5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-sm transition flex items-center justify-center gap-1.5">
-                      <span>✎ Fill ${unitLabel} ${lastRoundNumber} (${pendingSeatsOnLastRound.length} pending)</span>
-                    </button>
-                  ` : ''}
-                `}
-                ${isGolf && host && rounds.length >= totalHoles ? `
-                  <button id="match-golf-finish-btn" class="py-4 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-sm transition flex items-center justify-center gap-2">
-                    <span>🏁 Finish &amp; Crown Winner</span>
-                  </button>
-                ` : ''}
-                ${isScrabble ? `
-                  <button id="match-scrabble-out-btn" class="py-4 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-extrabold text-sm sm:text-base shadow-sm transition flex items-center justify-center gap-2">
-                    <span>🏁 OUT (End Game)</span>
-                  </button>
-                ` : ''}
-              ` : `
-                <div class="w-full p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/70 text-center text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Score entry is set to Host Only in Room Settings.
-                </div>
-              `}
-            </div>
-          ` : ''}
-
-          <!-- Round-by-Round / Hole-by-Hole Score Sheet -->
-          <section class="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h2 class="text-sm font-extrabold text-slate-900 dark:text-white">Score Sheet</h2>
-              <span class="text-xs font-semibold text-slate-400">
-                ${isGolf ? `${rounds.length} of ${totalHoles} holes` : `${rounds.length} ${rounds.length === 1 ? 'round' : unitLabelPlural} logged`}
-              </span>
-            </div>
-
-            ${rounds.length === 0 ? `
-              <div class="p-8 text-center space-y-1">
-                <div class="text-2xl">${isGolf ? '⛳' : '📝'}</div>
-                <div class="font-bold text-sm text-slate-700 dark:text-slate-200">No ${unitLabelPlural} logged yet</div>
-                <p class="text-xs text-slate-400">Tap “Log ${unitLabel} 1” above to start tallying scores with the number pad.</p>
-              </div>
-            ` : `
-              <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                  <thead>
-                    <tr class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      <th class="py-3 px-4 w-16">${unitLabelShort}</th>
-                      ${players.map((p) => `
-                        <th class="py-3 px-3 text-right whitespace-nowrap">
-                          <span class="mr-1">${getAvatarObj(p.avatar).emoji}</span>${escapeHtml(p.name)}
-                        </th>
-                      `).join('')}
-                      ${canScore && !isFinished ? '<th class="py-3 px-3 w-12"></th>' : ''}
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
-                    ${rounds.map((r, idx) => {
-                      const isOutRound = r.type === 'scrabble-out';
-                      return `
-                        <tr class="${isOutRound ? 'bg-amber-50/70 dark:bg-amber-950/25' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}">
-                          <td class="py-3 px-4 align-top">
-                            <div class="font-extrabold text-xs ${isOutRound ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}">
-                              ${isOutRound ? 'OUT' : isGolf ? `H${idx + 1}` : `#${idx + 1}`}
-                            </div>
-                            ${r.note ? `<div class="text-[11px] text-slate-400 max-w-[140px] truncate" title="${escapeHtml(r.note)}">${escapeHtml(r.note)}</div>` : ''}
-                          </td>
-                          ${players.map((p) => {
-                            const rawVal = r.scores?.[p.seatId];
-                            const isUnentered = rawVal === null || rawVal === undefined;
-                            if (isUnentered) {
-                              return `
-                                <td class="py-3 px-3 text-right">
-                                  ${canScore && !isFinished && !isOutRound ? `
-                                    <button data-fill-round="${escapeHtml(r.roundId)}" data-fill-seat="${escapeHtml(p.seatId)}" class="fill-cell-btn px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-950 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 text-xs font-bold transition" title="Tap to enter ${escapeHtml(p.name)}'s score">
-                                      —
-                                    </button>
-                                  ` : '<span class="text-slate-300 dark:text-slate-600 font-bold">—</span>'}
-                                </td>
-                              `;
-                            }
-                            const val = Number(rawVal) || 0;
-                            const cellColor = isGolf
-                              ? val < 0
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : val === 0
-                                  ? 'text-emerald-700 dark:text-emerald-300'
-                                  : 'text-slate-900 dark:text-white'
-                              : val > 0
-                                ? 'text-slate-900 dark:text-white'
-                                : val < 0
-                                  ? 'text-rose-600 dark:text-rose-400'
-                                  : 'text-slate-400 dark:text-slate-500';
-                            return `
-                              <td class="py-3 px-3 text-right font-bold tabular-nums ${cellColor}">
-                                ${val > 0 && isOutRound ? `+${val}` : val}
-                              </td>
-                            `;
-                          }).join('')}
-                          ${canScore && !isFinished ? `
-                            <td class="py-3 px-3 text-right">
-                              <button data-edit-round="${escapeHtml(r.roundId)}" title="Edit ${unitLabel}" class="edit-round-btn p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 transition">
-                                ✎
-                              </button>
-                            </td>
-                          ` : ''}
-                        </tr>
-                      `;
-                    }).join('')}
-                  </tbody>
-                  <tfoot>
-                    <tr class="bg-slate-50 dark:bg-slate-800/80 border-t-2 border-slate-200 dark:border-slate-700 font-extrabold text-sm">
-                      <td class="py-3 px-4 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Total</td>
-                      ${players.map((p) => {
-                        const tot = computePlayerTotals(room)[p.seatId] || 0;
-                        return `<td class="py-3 px-3 text-right tabular-nums text-indigo-700 dark:text-indigo-300">${tot}</td>`;
-                      }).join('')}
-                      ${canScore && !isFinished ? '<td></td>' : ''}
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            `}
-          </section>
+          <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(ruleBadgeText)}</p>
         </div>
-      `;
 
-      // Match Bindings
-      document.getElementById('match-rules-btn').addEventListener('click', () => {
-        if (game) openRulesInfoModal(game, match.rules);
-      });
+        <div class="flex items-center gap-2 flex-wrap">
+          <button id="match-rules-btn" class="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 text-xs font-bold transition">
+            Rules
+          </button>
+          ${host && !isFinished ? `
+            <button id="match-edit-rules-btn" class="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 text-xs font-bold transition">
+              Edit Rules
+            </button>
+            <button id="match-close-game-btn" class="px-3.5 py-2 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-bold transition">
+              Close Game
+            </button>
+          ` : ''}
+          ${host && isFinished ? `
+            <button id="match-back-lobby-btn" class="px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold transition">
+              ← Lobby
+            </button>
+          ` : ''}
+        </div>
+      </div>
 
-      const editRulesBtn = document.getElementById('match-edit-rules-btn');
-      if (editRulesBtn && game) {
-        editRulesBtn.addEventListener('click', () => openGameRulesSetupModal(game, { editingActiveMatch: true }));
-      }
+      <!-- Winner Banner (when finished) -->
+      ${isFinished ? `
+        <div class="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-white shadow-soft flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <div class="text-xs font-extrabold uppercase tracking-widest opacity-90">🏆 Match Complete</div>
+            <div class="text-2xl font-black">${escapeHtml(winnerNames.join(' & ') || 'Winner')} Wins!</div>
+            <p class="text-xs sm:text-sm text-amber-50">Final results have been saved to your table’s match history.</p>
+          </div>
+          ${host ? `
+            <div class="flex items-center gap-2 shrink-0">
+              <button id="match-play-again-btn" class="px-4 py-2.5 rounded-2xl bg-white text-slate-900 hover:bg-amber-50 font-extrabold text-xs shadow-sm transition">
+                Play Again
+              </button>
+              <button id="match-lobby-after-win-btn" class="px-4 py-2.5 rounded-2xl bg-black/20 hover:bg-black/30 text-white font-bold text-xs transition">
+                Choose New Game
+              </button>
+            </div>
+          ` : ''}
+        </div>
+      ` : ''}
 
-      const backLobbyBtn = document.getElementById('match-back-lobby-btn');
-      if (backLobbyBtn) {
-        backLobbyBtn.addEventListener('click', async () => {
-          const updated = { ...state.currentRoom, status: 'lobby', activeMatch: null };
-          await saveRoom(updated);
-        });
-      }
+      <!-- Live Standings Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        ${standings.map((p, idx) => {
+          const av = getAvatarObj(p.avatar);
+          const isWinner = isFinished && winnerSet.has(p.seatId);
+          const isLeader = !isFinished && idx === 0 && (isGolf ? rounds.length > 0 : p.total > 0);
+          const rawLast = lastRound ? lastRound.scores?.[p.seatId] : undefined;
+          const isPendingLast = !isScrabble && !isFinished && Boolean(lastStandardRound) && (rawLast === null || rawLast === undefined);
+          const lastDelta = rawLast !== null && rawLast !== undefined ? Number(rawLast) : null;
+          const pct = targetScore ? Math.min(100, Math.max(0, Math.round((p.total / targetScore) * 100))) : null;
+          const deltaGood = isGolf ? (lastDelta !== null && lastDelta <= 0) : (lastDelta !== null && lastDelta > 0);
+          return `
+            <div class="p-4 rounded-3xl bg-white dark:bg-slate-900 border-2 ${
+              isWinner
+                ? 'border-amber-400 shadow-soft'
+                : isLeader
+                ? 'border-indigo-400 dark:border-indigo-500 shadow-sm'
+                : 'border-slate-200 dark:border-slate-800'
+            } space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${av.color}">${av.emoji}</span>
+                  <div class="min-w-0">
+                    <div class="font-extrabold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(p.name)}</div>
+                    <div class="text-[11px] font-semibold text-slate-400">
+                      ${isWinner ? '🏆 Winner' : `#${idx + 1} Place`}
+                    </div>
+                  </div>
+                </div>
+                ${isPendingLast ? `
+                  <span class="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
+                    ${unitLabelShort} ${lastRoundNumber} Pending
+                  </span>
+                ` : lastDelta !== null && (isGolf || lastDelta !== 0) ? `
+                  <span class="px-2 py-0.5 rounded-lg text-xs font-extrabold tabular-nums ${
+                    deltaGood
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                      : isGolf
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                      : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                  }">
+                    ${lastDelta > 0 ? `+${lastDelta}` : lastDelta}
+                  </span>
+                ` : ''}
+              </div>
+              <div class="flex items-baseline justify-between">
+                <div class="text-3xl font-extrabold tabular-nums text-slate-900 dark:text-white">${p.total}</div>
+                ${targetScore ? `<span class="text-xs font-semibold text-slate-400">/ ${targetScore}</span>` : '<span class="text-xs font-semibold text-slate-400">pts</span>'}
+              </div>
+              ${pct !== null ? `
+                <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                  <div class="h-full rounded-full transition-all duration-300 ${isWinner ? 'bg-amber-400' : 'bg-indigo-600 dark:bg-indigo-400'}" style="width: ${pct}%"></div>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
 
-      const closeGameBtn = document.getElementById('match-close-game-btn');
-      if (closeGameBtn) {
-        closeGameBtn.addEventListener('click', () => openCloseGameModal());
-      }
+      <!-- Primary Action Controls (when playing) -->
+      ${!isFinished ? `
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          ${canScore ? `
+            ${currentUserPendingLastRound ? `
+              <button id="match-log-my-pending-btn" class="flex-1 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-soft transition flex items-center justify-center gap-2">
+                <span>＋ Log Your ${unitLabel} ${lastRoundNumber} Score</span>
+              </button>
+              ${canLogNextHole ? `
+                <button id="match-log-round-btn" class="py-4 px-5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold text-sm transition flex items-center justify-center gap-2">
+                  <span>Start ${unitLabel} ${rounds.length + 1}</span>
+                </button>
+              ` : ''}
+            ` : `
+              ${canLogNextHole ? `
+                <button id="match-log-round-btn" class="flex-1 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-soft transition flex items-center justify-center gap-2">
+                  <span>${isScrabble ? '＋ Log Points' : `＋ Log ${unitLabel} ${rounds.length + 1}`}</span>
+                </button>
+              ` : ''}
+              ${pendingSeatsOnLastRound.length > 0 ? `
+                <button id="match-fill-pending-btn" class="${canLogNextHole ? '' : 'flex-1'} py-4 px-5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-sm transition flex items-center justify-center gap-1.5">
+                  <span>✎ Fill ${unitLabel} ${lastRoundNumber} (${pendingSeatsOnLastRound.length} pending)</span>
+                </button>
+              ` : ''}
+            `}
+            ${isGolf && host && rounds.length >= totalHoles ? `
+              <button id="match-golf-finish-btn" class="py-4 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-sm transition flex items-center justify-center gap-2">
+                <span>🏁 Finish &amp; Crown Winner</span>
+              </button>
+            ` : ''}
+            ${isScrabble ? `
+              <button id="match-scrabble-out-btn" class="py-4 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-extrabold text-sm sm:text-base shadow-sm transition flex items-center justify-center gap-2">
+                <span>🏁 OUT (End Game)</span>
+              </button>
+            ` : ''}
+          ` : `
+            <div class="w-full p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/70 text-center text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Score entry is set to Host Only in Room Settings.
+            </div>
+          `}
+        </div>
+      ` : ''}
 
-      const playAgainBtn = document.getElementById('match-play-again-btn');
-      if (playAgainBtn && game) {
-        playAgainBtn.addEventListener('click', async () => {
-          await startNewMatchInRoom(game, match.rules);
-        });
-      }
+      <!-- Round-by-Round / Hole-by-Hole Score Sheet -->
+      <section class="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <h2 class="text-sm font-extrabold text-slate-900 dark:text-white">Score Sheet</h2>
+          <span class="text-xs font-semibold text-slate-400">
+            ${isGolf ? `${rounds.length} of ${totalHoles} holes` : `${rounds.length} ${rounds.length === 1 ? 'round' : unitLabelPlural} logged`}
+          </span>
+        </div>
 
-      const lobbyAfterWinBtn = document.getElementById('match-lobby-after-win-btn');
-      if (lobbyAfterWinBtn) {
-        lobbyAfterWinBtn.addEventListener('click', async () => {
-          const updated = { ...state.currentRoom, status: 'lobby', activeMatch: null };
-          await saveRoom(updated);
-        });
-      }
+        ${rounds.length === 0 ? `
+          <div class="p-8 text-center space-y-1">
+            <div class="text-2xl">${isGolf ? '⛳' : '📝'}</div>
+            <div class="font-bold text-sm text-slate-700 dark:text-slate-200">No ${unitLabelPlural} logged yet</div>
+            <p class="text-xs text-slate-400">Tap “${isScrabble ? 'Log Points' : `Log ${unitLabel} 1`}” above to start tallying scores with the number pad.</p>
+          </div>
+        ` : `
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <th class="py-3 px-4 w-16">${unitLabelShort}</th>
+                  ${players.map((p) => `
+                    <th class="py-3 px-3 text-right whitespace-nowrap">
+                      <span class="mr-1">${getAvatarObj(p.avatar).emoji}</span>${escapeHtml(p.name)}
+                    </th>
+                  `).join('')}
+                  ${canScore && !isFinished ? '<th class="py-3 px-3 w-12"></th>' : ''}
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
+                ${rounds.map((r, idx) => {
+                  const isOutRound = r.type === 'scrabble-out';
+                  return `
+                    <tr class="${isOutRound ? 'bg-amber-50/70 dark:bg-amber-950/25' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}">
+                      <td class="py-3 px-4 align-top">
+                        <div class="font-extrabold text-xs ${isOutRound ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}">
+                          ${isOutRound ? 'OUT' : isGolf ? `H${idx + 1}` : `#${idx + 1}`}
+                        </div>
+                        ${r.note ? `<div class="text-[11px] text-slate-400 max-w-[140px] truncate" title="${escapeHtml(r.note)}">${escapeHtml(r.note)}</div>` : ''}
+                      </td>
+                      ${players.map((p) => {
+                        const rawVal = r.scores?.[p.seatId];
+                        const isUnentered = rawVal === null || rawVal === undefined;
+                        if (isUnentered) {
+                          return `
+                            <td class="py-3 px-3 text-right">
+                              ${canScore && !isFinished && !isOutRound ? `
+                                <button data-fill-round="${escapeHtml(r.roundId)}" data-fill-seat="${escapeHtml(p.seatId)}" class="fill-cell-btn px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-950 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 text-xs font-bold transition" title="Tap to enter ${escapeHtml(p.name)}'s score">
+                                  —
+                                </button>
+                              ` : '<span class="text-slate-300 dark:text-slate-600 font-bold">—</span>'}
+                            </td>
+                          `;
+                        }
+                        const val = Number(rawVal) || 0;
+                        const cellColor = isGolf
+                          ? val < 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : val === 0
+                            ? 'text-emerald-700 dark:text-emerald-300'
+                            : 'text-slate-900 dark:text-white'
+                          : val > 0
+                          ? 'text-slate-900 dark:text-white'
+                          : val < 0
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-slate-400 dark:text-slate-500';
+                        return `
+                          <td class="py-3 px-3 text-right font-bold tabular-nums ${cellColor}">
+                            ${val > 0 && isOutRound ? `+${val}` : val}
+                          </td>
+                        `;
+                      }).join('')}
+                      ${canScore && !isFinished ? `
+                        <td class="py-3 px-3 text-right">
+                          <button data-edit-round="${escapeHtml(r.roundId)}" title="Edit ${unitLabel}" class="edit-round-btn p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 transition">
+                            ✎
+                          </button>
+                        </td>
+                      ` : ''}
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+              <tfoot>
+                <tr class="bg-slate-50 dark:bg-slate-800/80 border-t-2 border-slate-200 dark:border-slate-700 font-extrabold text-sm">
+                  <td class="py-3 px-4 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Total</td>
+                  ${players.map((p) => {
+                    const tot = computePlayerTotals(room)[p.seatId] || 0;
+                    return `<td class="py-3 px-3 text-right tabular-nums text-indigo-700 dark:text-indigo-300">${tot}</td>`;
+                  }).join('')}
+                  ${canScore && !isFinished ? '<td></td>' : ''}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        `}
+      </section>
+    </div>
+  `;
 
-      const logMyPendingBtn = document.getElementById('match-log-my-pending-btn');
-      if (logMyPendingBtn && lastStandardRound && mySeat) {
-        logMyPendingBtn.addEventListener('click', () => openLogRoundModal(lastStandardRound, mySeat.seatId));
-      }
+  // Match Bindings
+  document.getElementById('match-rules-btn').addEventListener('click', () => {
+    if (game) openRulesInfoModal(game, match.rules);
+  });
 
-      const fillPendingBtn = document.getElementById('match-fill-pending-btn');
-      if (fillPendingBtn && lastStandardRound && pendingSeatsOnLastRound.length > 0) {
-        fillPendingBtn.addEventListener('click', () => openLogRoundModal(lastStandardRound, pendingSeatsOnLastRound[0].seatId));
-      }
+  const editRulesBtn = document.getElementById('match-edit-rules-btn');
+  if (editRulesBtn && game) {
+    editRulesBtn.addEventListener('click', () => openGameRulesSetupModal(game, { editingActiveMatch: true }));
+  }
 
-      const logRoundBtn = document.getElementById('match-log-round-btn');
-      if (logRoundBtn) {
-        logRoundBtn.addEventListener('click', () => openLogRoundModal(null, mySeat?.seatId || null));
-      }
+  const backLobbyBtn = document.getElementById('match-back-lobby-btn');
+  if (backLobbyBtn) {
+    backLobbyBtn.addEventListener('click', async () => {
+      const updated = { ...state.currentRoom, status: 'lobby', activeMatch: null };
+      await saveRoom(updated);
+    });
+  }
 
-      const golfFinishBtn = document.getElementById('match-golf-finish-btn');
-      if (golfFinishBtn) {
-        golfFinishBtn.addEventListener('click', async () => {
-          const updated = JSON.parse(JSON.stringify(state.currentRoom));
-          await finalizeMatch(updated);
-        });
-      }
+  const closeGameBtn = document.getElementById('match-close-game-btn');
+  if (closeGameBtn) {
+    closeGameBtn.addEventListener('click', () => openCloseGameModal());
+  }
 
-      const scrabbleOutBtn = document.getElementById('match-scrabble-out-btn');
-      if (scrabbleOutBtn) {
-        scrabbleOutBtn.addEventListener('click', () => openScrabbleOutModal());
-      }
+  const playAgainBtn = document.getElementById('match-play-again-btn');
+  if (playAgainBtn && game) {
+    playAgainBtn.addEventListener('click', async () => {
+      await startNewMatchInRoom(game, match.rules);
+    });
+  }
 
-      container.querySelectorAll('.fill-cell-btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const rid = btn.getAttribute('data-fill-round');
-          const sid = btn.getAttribute('data-fill-seat');
-          const rnd = rounds.find((x) => x.roundId === rid);
-          if (rnd) openLogRoundModal(rnd, sid);
-        });
-      });
+  const lobbyAfterWinBtn = document.getElementById('match-lobby-after-win-btn');
+  if (lobbyAfterWinBtn) {
+    lobbyAfterWinBtn.addEventListener('click', async () => {
+      const updated = { ...state.currentRoom, status: 'lobby', activeMatch: null };
+      await saveRoom(updated);
+    });
+  }
 
-      container.querySelectorAll('.edit-round-btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const rid = btn.getAttribute('data-edit-round');
-          const rnd = rounds.find((x) => x.roundId === rid);
-          if (rnd) openLogRoundModal(rnd, mySeat?.seatId || null);
-        });
-      });
-    }
+  const logMyPendingBtn = document.getElementById('match-log-my-pending-btn');
+  if (logMyPendingBtn && lastStandardRound && mySeat) {
+    logMyPendingBtn.addEventListener('click', async () => {
+      await syncCurrentRoomNow({ silent: true });
+      openLogRoundModal(lastStandardRound, mySeat.seatId);
+    });
+  }
+
+  const fillPendingBtn = document.getElementById('match-fill-pending-btn');
+  if (fillPendingBtn && lastStandardRound && pendingSeatsOnLastRound.length > 0) {
+    fillPendingBtn.addEventListener('click', async () => {
+      await syncCurrentRoomNow({ silent: true });
+      openLogRoundModal(lastStandardRound, pendingSeatsOnLastRound[0].seatId);
+    });
+  }
+
+  const logRoundBtn = document.getElementById('match-log-round-btn');
+  if (logRoundBtn) {
+    logRoundBtn.addEventListener('click', async () => {
+      await syncCurrentRoomNow({ silent: true });
+      openLogRoundModal(null, mySeat?.seatId || null);
+    });
+  }
+
+  const golfFinishBtn = document.getElementById('match-golf-finish-btn');
+  if (golfFinishBtn) {
+    golfFinishBtn.addEventListener('click', async () => {
+      const updated = JSON.parse(JSON.stringify(state.currentRoom));
+      await finalizeMatch(updated);
+    });
+  }
+
+  const scrabbleOutBtn = document.getElementById('match-scrabble-out-btn');
+  if (scrabbleOutBtn) {
+    scrabbleOutBtn.addEventListener('click', () => openScrabbleOutModal());
+  }
+
+  container.querySelectorAll('.fill-cell-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const rid = btn.getAttribute('data-fill-round');
+      const sid = btn.getAttribute('data-fill-seat');
+      const rnd = rounds.find((x) => x.roundId === rid);
+      if (rnd) openLogRoundModal(rnd, sid);
+    });
+  });
+
+  container.querySelectorAll('.edit-round-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const rid = btn.getAttribute('data-edit-round');
+      const rnd = rounds.find((x) => x.roundId === rid);
+      if (rnd) openLogRoundModal(rnd, mySeat?.seatId || null);
+    });
+  });
+}
 
     // =========================================================================
     // 9D. VIEW: YAHTZEE INTERACTIVE SCORECARD & COMPACT LEADERBOARD
@@ -4228,348 +4276,377 @@
 
     // MODAL 6: LOG OR EDIT ROUND (Tactile Number Pad + Smart Collaborative Merge)
     function openLogRoundModal(existingRound = null, focusSeatId = null) {
-      const room = state.currentRoom;
-      const match = room?.activeMatch;
-      if (!room || !match) return;
+  const room = state.currentRoom;
+  const match = room?.activeMatch;
+  if (!room || !match) return;
+  const players = room.players || [];
+  if (players.length === 0) return;
 
-      const players = room.players || [];
-      if (players.length === 0) return;
+  const isEdit = Boolean(existingRound);
+  const roundNumber = isEdit
+    ? (match.rounds || []).findIndex((r) => r.roundId === existingRound.roundId) + 1
+    : (match.rounds || []).length + 1;
+  const isGin = match.gameId === 'gin-rummy';
+  const isScrabble = match.gameId === 'scrabble';
+  const isGolf = match.gameId === 'golf';
+  const unitLabel = isGolf ? 'Hole' : 'Round';
+  const ginBonus = match.rules?.ginBonus ?? 25;
+  const undercutBonus = match.rules?.undercutBonus ?? 25;
 
-      const isEdit = Boolean(existingRound);
-      const roundNumber = isEdit
-        ? (match.rounds || []).findIndex((r) => r.roundId === existingRound.roundId) + 1
-        : (match.rounds || []).length + 1;
+  const exprMap = {};
+  const touchedSeats = new Set();
+  players.forEach((p) => {
+    if (isEdit) {
+      const val = existingRound.scores?.[p.seatId];
+      exprMap[p.seatId] = val !== null && val !== undefined ? String(val).replace('-', '−') : '';
+    } else {
+      exprMap[p.seatId] = '';
+    }
+  });
 
-      const isGin = match.gameId === 'gin-rummy';
-      const isScrabble = match.gameId === 'scrabble';
-      const isGolf = match.gameId === 'golf';
-      const unitLabel = isGolf ? 'Hole' : 'Round';
-      const ginBonus = match.rules?.ginBonus ?? 25;
-      const undercutBonus = match.rules?.undercutBonus ?? 25;
+  // Focus requested seat -> current user's seat -> first player
+  let activeIdx = 0;
+  if (focusSeatId) {
+    const idx = players.findIndex((p) => p.seatId === focusSeatId);
+    if (idx !== -1) activeIdx = idx;
+  } else {
+    const myIdx = players.findIndex((p) => p.claimedByUid && p.claimedByUid === state.currentUser.uid);
+    if (myIdx !== -1) activeIdx = myIdx;
+  }
 
-      const exprMap = {};
-      const touchedSeats = new Set();
+  let noteText = isEdit ? (existingRound.note || '') : '';
+  let noteTouched = false;
+  let showNoteField = Boolean(noteText);
 
+  const renderLogRoundUI = () => {
+    const activePlayer = players[activeIdx];
+    openModal(`
+      <div class="p-4 sm:p-6 space-y-4">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+              ${escapeHtml(match.gameName)}
+            </span>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">
+              ${isEdit ? `${unitLabel} ${roundNumber} Scores` : isScrabble ? 'Log Points' : `Log ${unitLabel} ${roundNumber}`}
+            </h2>
+          </div>
+          <button type="button" id="lr-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-sm">✕</button>
+        </div>
+
+        <!-- Player Score Selector Rows -->
+        <div class="space-y-2 max-h-[30vh] overflow-y-auto pr-0.5">
+          ${players.map((p, idx) => {
+            const av = getAvatarObj(p.avatar);
+            const isActive = idx === activeIdx;
+            const expr = exprMap[p.seatId] || '';
+            const evalVal = expr ? evaluateScoreExpression(expr) : null;
+            const hasExprOps = /[+−×]/.test(expr.slice(1));
+            const statusText = isScrabble && !isEdit
+              ? (isActive ? 'Entering points' : !expr ? 'Tap to enter' : 'Ready')
+              : (isActive ? 'Entering score' : !expr ? 'Pending' : 'Entered');
+            return `
+              <button
+                type="button"
+                data-select-player-idx="${idx}"
+                class="lr-player-row w-full text-left p-3 rounded-2xl border-2 transition flex items-center justify-between gap-3 ${
+                  isActive
+                    ? 'border-indigo-600 dark:border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/50 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:border-slate-300 dark:hover:border-slate-700'
+                }"
+              >
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 ${av.color}">${av.emoji}</span>
+                  <div class="min-w-0">
+                    <div class="font-bold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(p.name)}</div>
+                    <div class="text-[10px] font-bold uppercase tracking-wider ${
+                      isActive
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : !expr
+                        ? 'text-slate-400'
+                        : 'text-emerald-600 dark:text-emerald-400'
+                    }">
+                      ${statusText}
+                    </div>
+                  </div>
+                </div>
+                <div class="text-right shrink-0">
+                  <div class="font-extrabold text-xl tabular-nums leading-tight ${
+                    evalVal !== null && Number.isNaN(evalVal)
+                      ? 'text-rose-500'
+                      : isActive
+                      ? 'text-indigo-700 dark:text-indigo-300'
+                      : 'text-slate-900 dark:text-white'
+                  }">
+                    ${expr ? escapeHtml(expr) : '<span class="text-slate-400 dark:text-slate-500">—</span>'}
+                  </div>
+                  ${hasExprOps ? `
+                    <div class="text-[11px] font-bold tabular-nums ${Number.isNaN(evalVal) ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}">
+                      ${Number.isNaN(evalVal) ? 'Check math' : `= ${evalVal}`}
+                    </div>
+                  ` : ''}
+                </div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+
+        <!-- Quick Bonus Buttons + Note Toggle -->
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            ${isGin && ginBonus > 0 ? `<button type="button" data-quick-bonus="${ginBonus}" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-xs font-bold text-indigo-700 dark:text-indigo-300 active:scale-95 transition">+${ginBonus} Gin</button>` : ''}
+            ${isGin && undercutBonus > 0 ? `<button type="button" data-quick-bonus="${undercutBonus}" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+${undercutBonus} Undercut</button>` : ''}
+            ${isScrabble ? `<button type="button" data-quick-bonus="50" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+50 Bingo</button>` : ''}
+            ${isScrabble && !isEdit ? `<button type="button" id="lr-switch-out-btn" class="px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-xs font-bold text-amber-800 dark:text-amber-300 active:scale-95 transition">🏁 OUT</button>` : ''}
+            ${isGolf ? `<span class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Tip: tap ± for negative scores</span>` : ''}
+          </div>
+          <button type="button" id="lr-toggle-note-btn" class="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
+            ${showNoteField ? 'Hide Note' : `+ Add ${unitLabel} Note`}
+          </button>
+        </div>
+
+        ${showNoteField ? `
+          <input
+            id="lr-note"
+            type="text"
+            maxlength="60"
+            value="${escapeHtml(noteText)}"
+            placeholder="${isScrabble ? 'e.g., QUARTZ on triple word' : isGolf ? 'e.g., Pair of Kings + Joker' : 'e.g., Alex went Gin!'}"
+            class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        ` : ''}
+
+        ${buildNumberPadHtml({ nextLabel: 'Save ✓', showSignToggle: isGolf })}
+      </div>
+    `, { maxWidth: 'max-w-md' });
+
+    document.getElementById('lr-close-btn').addEventListener('click', closeModal);
+
+    const captureNote = () => {
+      const nInp = document.getElementById('lr-note');
+      if (nInp && nInp.value !== noteText) {
+        noteText = nInp.value;
+        noteTouched = true;
+      }
+    };
+
+    document.querySelectorAll('.lr-player-row').forEach((row) => {
+      row.addEventListener('click', () => {
+        captureNote();
+        activeIdx = parseInt(row.getAttribute('data-select-player-idx'), 10);
+        renderLogRoundUI();
+      });
+    });
+
+    document.querySelectorAll('.lr-bonus-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        captureNote();
+        const bonus = btn.getAttribute('data-quick-bonus');
+        const sid = activePlayer.seatId;
+        const cur = exprMap[sid] || '';
+        exprMap[sid] = cur ? `${cur}+${bonus}` : `${bonus}`;
+        touchedSeats.add(sid);
+        renderLogRoundUI();
+      });
+    });
+
+    document.getElementById('lr-toggle-note-btn').addEventListener('click', () => {
+      captureNote();
+      showNoteField = !showNoteField;
+      renderLogRoundUI();
+      if (showNoteField) {
+        const nInp = document.getElementById('lr-note');
+        if (nInp) nInp.focus();
+      }
+    });
+
+    const submitRound = async () => {
+      captureNote();
+      let hasInvalid = false;
+      const enteredMap = {};
       players.forEach((p) => {
-        if (isEdit) {
-          const val = existingRound.scores?.[p.seatId];
-          exprMap[p.seatId] = val !== null && val !== undefined ? String(val).replace('-', '−') : '';
+        const raw = (exprMap[p.seatId] || '').trim();
+        if (!raw) {
+          enteredMap[p.seatId] = null;
         } else {
-          exprMap[p.seatId] = '';
+          const parsed = evaluateScoreExpression(raw);
+          if (Number.isNaN(parsed)) {
+            hasInvalid = true;
+          } else {
+            enteredMap[p.seatId] = parsed;
+          }
         }
       });
 
-      // Focus requested seat -> current user's seat -> first player
-      let activeIdx = 0;
-      if (focusSeatId) {
-        const idx = players.findIndex((p) => p.seatId === focusSeatId);
-        if (idx !== -1) activeIdx = idx;
-      } else {
-        const myIdx = players.findIndex((p) => p.claimedByUid && p.claimedByUid === state.currentUser.uid);
-        if (myIdx !== -1) activeIdx = myIdx;
+      if (hasInvalid) {
+        showToast('Please fix the invalid math expression before saving.', 'error');
+        return;
       }
 
-      let noteText = isEdit ? (existingRound.note || '') : '';
-      let noteTouched = false;
-      let showNoteField = Boolean(noteText);
+      const anyEntered = Object.values(enteredMap).some((v) => v !== null);
+      if (!isEdit && !anyEntered) {
+        showToast(`Enter at least one score on the number pad (even 0) to log this ${unitLabel.toLowerCase()}.`, 'warning');
+        return;
+      }
 
-      const renderLogRoundUI = () => {
-        const activePlayer = players[activeIdx];
+      // Always pull the latest room from Firestore right before merging
+      const latestRoom = (!isLocalFallback && fbUser && state.currentRoomCode)
+        ? (await fetchRoom(state.currentRoomCode)) || state.currentRoom
+        : state.currentRoom;
 
-        openModal(`
-          <div class="p-4 sm:p-6 space-y-4">
-            <div class="flex items-center justify-between gap-2">
-              <div>
-                <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-                  ${escapeHtml(match.gameName)}
-                </span>
-                <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">
-                  ${isEdit ? `${unitLabel} ${roundNumber} Scores` : `Log ${unitLabel} ${roundNumber}`}
-                </h2>
-              </div>
-              <button type="button" id="lr-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-sm">✕</button>
-            </div>
+      const updated = JSON.parse(JSON.stringify(latestRoom));
+      const latestRounds = updated.activeMatch.rounds || [];
+      let targetRoundIndex = -1;
 
-            <!-- Player Score Selector Rows -->
-            <div class="space-y-2 max-h-[30vh] overflow-y-auto pr-0.5">
-              ${players.map((p, idx) => {
-                const av = getAvatarObj(p.avatar);
-                const isActive = idx === activeIdx;
-                const expr = exprMap[p.seatId] || '';
-                const evalVal = expr ? evaluateScoreExpression(expr) : null;
-                const hasExprOps = /[+−×]/.test(expr.slice(1));
-
-                return `
-                  <button
-                    type="button"
-                    data-select-player-idx="${idx}"
-                    class="lr-player-row w-full text-left p-3 rounded-2xl border-2 transition flex items-center justify-between gap-3 ${
-                      isActive
-                        ? 'border-indigo-600 dark:border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/50 shadow-sm'
-                        : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:border-slate-300 dark:hover:border-slate-700'
-                    }"
-                  >
-                    <div class="flex items-center gap-2.5 min-w-0">
-                      <span class="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 ${av.color}">${av.emoji}</span>
-                      <div class="min-w-0">
-                        <div class="font-bold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(p.name)}</div>
-                        <div class="text-[10px] font-bold uppercase tracking-wider ${
-                          isActive
-                            ? 'text-indigo-600 dark:text-indigo-400'
-                            : !expr
-                              ? 'text-slate-400'
-                              : 'text-emerald-600 dark:text-emerald-400'
-                        }">
-                          ${isActive ? 'Entering score' : !expr ? 'Pending' : 'Entered'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="text-right shrink-0">
-                      <div class="font-extrabold text-xl tabular-nums leading-tight ${
-                        evalVal !== null && Number.isNaN(evalVal)
-                          ? 'text-rose-500'
-                          : isActive
-                            ? 'text-indigo-700 dark:text-indigo-300'
-                            : 'text-slate-900 dark:text-white'
-                      }">
-                        ${expr ? escapeHtml(expr) : '<span class="text-slate-400 dark:text-slate-500">—</span>'}
-                      </div>
-                      ${hasExprOps ? `
-                        <div class="text-[11px] font-bold tabular-nums ${Number.isNaN(evalVal) ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}">
-                          ${Number.isNaN(evalVal) ? 'Check math' : `= ${evalVal}`}
-                        </div>
-                      ` : ''}
-                    </div>
-                  </button>
-                `;
-              }).join('')}
-            </div>
-
-            <!-- Quick Bonus Buttons + Note Toggle -->
-            <div class="flex items-center justify-between gap-2 flex-wrap">
-              <div class="flex items-center gap-1.5 flex-wrap">
-                ${isGin && ginBonus > 0 ? `<button type="button" data-quick-bonus="${ginBonus}" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-xs font-bold text-indigo-700 dark:text-indigo-300 active:scale-95 transition">+${ginBonus} Gin</button>` : ''}
-                ${isGin && undercutBonus > 0 ? `<button type="button" data-quick-bonus="${undercutBonus}" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+${undercutBonus} Undercut</button>` : ''}
-                ${isScrabble ? `<button type="button" data-quick-bonus="50" class="lr-bonus-btn px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-300 active:scale-95 transition">+50 Bingo</button>` : ''}
-                ${isScrabble && !isEdit ? `<button type="button" id="lr-switch-out-btn" class="px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-xs font-bold text-amber-800 dark:text-amber-300 active:scale-95 transition">🏁 OUT</button>` : ''}
-                ${isGolf ? `<span class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Tip: tap ± for negative scores</span>` : ''}
-              </div>
-              <button type="button" id="lr-toggle-note-btn" class="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
-                ${showNoteField ? 'Hide Note' : `+ Add ${unitLabel} Note`}
-              </button>
-            </div>
-
-            ${showNoteField ? `
-              <input
-                id="lr-note"
-                type="text"
-                maxlength="60"
-                value="${escapeHtml(noteText)}"
-                placeholder="${isScrabble ? 'e.g., QUARTZ on triple word' : isGolf ? 'e.g., Pair of Kings + Joker' : 'e.g., Alex went Gin!'}"
-                class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            ` : ''}
-
-            ${buildNumberPadHtml({ nextLabel: 'Save ✓', showSignToggle: isGolf })}
-          </div>
-        `, { maxWidth: 'max-w-md' });
-
-        document.getElementById('lr-close-btn').addEventListener('click', closeModal);
-
-        const captureNote = () => {
-          const nInp = document.getElementById('lr-note');
-          if (nInp && nInp.value !== noteText) {
-            noteText = nInp.value;
-            noteTouched = true;
-          }
-        };
-
-        document.querySelectorAll('.lr-player-row').forEach((row) => {
-          row.addEventListener('click', () => {
-            captureNote();
-            activeIdx = parseInt(row.getAttribute('data-select-player-idx'), 10);
-            renderLogRoundUI();
-          });
-        });
-
-        document.querySelectorAll('.lr-bonus-btn').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            captureNote();
-            const bonus = btn.getAttribute('data-quick-bonus');
-            const sid = activePlayer.seatId;
-            const cur = exprMap[sid] || '';
-            exprMap[sid] = cur ? `${cur}+${bonus}` : `${bonus}`;
-            touchedSeats.add(sid);
-            renderLogRoundUI();
-          });
-        });
-
-        document.getElementById('lr-toggle-note-btn').addEventListener('click', () => {
-          captureNote();
-          showNoteField = !showNoteField;
-          renderLogRoundUI();
-          if (showNoteField) {
-            const nInp = document.getElementById('lr-note');
-            if (nInp) nInp.focus();
-          }
-        });
-
-        const submitRound = async () => {
-          captureNote();
-          let hasInvalid = false;
-          const enteredMap = {};
-
-          players.forEach((p) => {
-            const raw = (exprMap[p.seatId] || '').trim();
-            if (!raw) {
-              enteredMap[p.seatId] = null;
-            } else {
-              const parsed = evaluateScoreExpression(raw);
-              if (Number.isNaN(parsed)) {
-                hasInvalid = true;
-              } else {
-                enteredMap[p.seatId] = parsed;
-              }
-            }
-          });
-
-          if (hasInvalid) {
-            showToast('Please fix the invalid math expression before saving.', 'error');
-            return;
-          }
-
-          const anyEntered = Object.values(enteredMap).some((v) => v !== null);
-          if (!isEdit && !anyEntered) {
-            showToast(`Enter at least one score on the number pad (even 0) to log this ${unitLabel.toLowerCase()}.`, 'warning');
-            return;
-          }
-
-          // Merge cleanly with the latest live room state so concurrent entries never overwrite each other
-          const updated = JSON.parse(JSON.stringify(state.currentRoom));
-          const latestRounds = updated.activeMatch.rounds || [];
-
-          let targetRoundIndex = -1;
-          if (isEdit) {
-            targetRoundIndex = latestRounds.findIndex((r) => r.roundId === existingRound.roundId);
-          } else if (
-            latestRounds.length >= roundNumber &&
-            latestRounds[roundNumber - 1]?.type === 'standard'
-          ) {
-            targetRoundIndex = roundNumber - 1;
-          }
-
-          if (targetRoundIndex !== -1) {
-            const target = latestRounds[targetRoundIndex];
-            const mergedScores = { ...(target.scores || {}) };
-            touchedSeats.forEach((sid) => {
-              mergedScores[sid] = enteredMap[sid];
-            });
-            latestRounds[targetRoundIndex] = {
-              ...target,
-              scores: mergedScores,
-              note: noteTouched ? noteText.trim() : (target.note || ''),
-              editedBy: state.currentUser.name || 'Player',
-            };
-          } else {
-            const newScores = {};
-            players.forEach((p) => {
-              newScores[p.seatId] = enteredMap[p.seatId];
-            });
-            latestRounds.push({
+      if (isScrabble && !isEdit) {
+        // Per-player turn slotting: never overwrites another player's score
+        const seatsToLog = players.filter((p) => touchedSeats.has(p.seatId) && enteredMap[p.seatId] !== null);
+        seatsToLog.forEach((p) => {
+          let openRound = latestRounds.find(
+            (r) => r.type === 'standard' && (r.scores?.[p.seatId] === null || r.scores?.[p.seatId] === undefined)
+          );
+          if (!openRound) {
+            const blankScores = {};
+            players.forEach((pl) => { blankScores[pl.seatId] = null; });
+            openRound = {
               roundId: generateId('rnd'),
               type: 'standard',
-              scores: newScores,
-              note: noteText.trim(),
+              scores: blankScores,
+              note: '',
               loggedBy: state.currentUser.name || 'Player',
               createdAt: Date.now(),
-            });
+            };
+            latestRounds.push(openRound);
           }
-
-          updated.activeMatch.rounds = latestRounds;
-          closeModal();
-
-          if (updated.activeMatch.gameId === 'gin-rummy') {
-            const target = updated.activeMatch.rules?.targetScore || 100;
-            const newTotals = computePlayerTotals(updated);
-            const reached = Object.values(newTotals).some((v) => v >= target);
-            if (reached) {
-              await finalizeMatch(updated);
-              return;
-            }
-          }
-
-          if (updated.activeMatch.gameId === 'golf') {
-            const totalHoles = Math.max(1, parseInt(updated.activeMatch.rules?.totalHoles, 10) || 9);
-            if (latestRounds.length >= totalHoles) {
-              const finalHole = latestRounds[totalHoles - 1];
-              const allFilled = (updated.players || []).every(
-                (p) => finalHole?.scores?.[p.seatId] !== null && finalHole?.scores?.[p.seatId] !== undefined
-              );
-              if (allFilled) {
-                await finalizeMatch(updated);
-                return;
-              }
-            }
-          }
-
-          await saveRoom(updated);
-          showToast(
-            targetRoundIndex !== -1 ? `${unitLabel} ${roundNumber} updated!` : `${unitLabel} ${roundNumber} logged!`,
-            'success'
-          );
-        };
-
-        const handlePadPress = (key) => {
-          captureNote();
-          const sid = activePlayer.seatId;
-          if (key === 'NEXT') {
-            submitRound();
-            return;
-          }
-          exprMap[sid] = applyNumberPadKey(exprMap[sid], key);
-          touchedSeats.add(sid);
-          renderLogRoundUI();
-        };
-
-        document.querySelectorAll('.np-key').forEach((btn) => {
-          btn.addEventListener('click', () => handlePadPress(btn.getAttribute('data-np')));
+          openRound.scores[p.seatId] = enteredMap[p.seatId];
+          if (noteTouched && noteText.trim()) openRound.note = noteText.trim();
         });
-
-        const switchOutBtn = document.getElementById('lr-switch-out-btn');
-        if (switchOutBtn) {
-          switchOutBtn.addEventListener('click', () => openScrabbleOutModal());
+      } else {
+        if (isEdit) {
+          targetRoundIndex = latestRounds.findIndex((r) => r.roundId === existingRound.roundId);
+        } else if (
+          latestRounds.length >= roundNumber &&
+          latestRounds[roundNumber - 1]?.type === 'standard'
+        ) {
+          targetRoundIndex = roundNumber - 1;
         }
 
-        activeModalKeydownHandler = (e) => {
-          if (document.activeElement && document.activeElement.id === 'lr-note') return;
-          if (/^[0-9]$/.test(e.key)) {
-            e.preventDefault();
-            handlePadPress(e.key);
-          } else if (e.key === '+') {
-            e.preventDefault();
-            handlePadPress('+');
-          } else if (e.key === '-') {
-            e.preventDefault();
-            handlePadPress('−');
-          } else if (e.key === '*' && !isGolf) {
-            e.preventDefault();
-            handlePadPress('×');
-          } else if (e.key === 'Backspace') {
-            e.preventDefault();
-            handlePadPress('BACK');
-          } else if (e.key === 'Enter') {
-            e.preventDefault();
-            handlePadPress('NEXT');
-          } else if (e.key === 'Escape') {
-            closeModal();
-          }
-        };
-        window.addEventListener('keydown', activeModalKeydownHandler);
-      };
+        if (targetRoundIndex !== -1) {
+          const target = latestRounds[targetRoundIndex];
+          const mergedScores = { ...(target.scores || {}) };
+          touchedSeats.forEach((sid) => {
+            mergedScores[sid] = enteredMap[sid];
+          });
+          latestRounds[targetRoundIndex] = {
+            ...target,
+            scores: mergedScores,
+            note: noteTouched ? noteText.trim() : (target.note || ''),
+            editedBy: state.currentUser.name || 'Player',
+          };
+        } else {
+          const newScores = {};
+          players.forEach((p) => {
+            newScores[p.seatId] = enteredMap[p.seatId];
+          });
+          latestRounds.push({
+            roundId: generateId('rnd'),
+            type: 'standard',
+            scores: newScores,
+            note: noteText.trim(),
+            loggedBy: state.currentUser.name || 'Player',
+            createdAt: Date.now(),
+          });
+        }
+      }
 
+      updated.activeMatch.rounds = latestRounds;
+      closeModal();
+
+      if (updated.activeMatch.gameId === 'gin-rummy') {
+        const target = updated.activeMatch.rules?.targetScore || 100;
+        const newTotals = computePlayerTotals(updated);
+        const reached = Object.values(newTotals).some((v) => v >= target);
+        if (reached) {
+          await finalizeMatch(updated);
+          return;
+        }
+      }
+
+      if (updated.activeMatch.gameId === 'golf') {
+        const totalHoles = Math.max(1, parseInt(updated.activeMatch.rules?.totalHoles, 10) || 9);
+        if (latestRounds.length >= totalHoles) {
+          const finalHole = latestRounds[totalHoles - 1];
+          const allFilled = (updated.players || []).every(
+            (p) => finalHole?.scores?.[p.seatId] !== null && finalHole?.scores?.[p.seatId] !== undefined
+          );
+          if (allFilled) {
+            await finalizeMatch(updated);
+            return;
+          }
+        }
+      }
+
+      await saveRoom(updated);
+      showToast(
+        isScrabble && !isEdit
+          ? 'Points logged!'
+          : targetRoundIndex !== -1
+          ? `${unitLabel} ${roundNumber} updated!`
+          : `${unitLabel} ${roundNumber} logged!`,
+        'success'
+      );
+    };
+
+    const handlePadPress = (key) => {
+      captureNote();
+      const sid = activePlayer.seatId;
+      if (key === 'NEXT') {
+        submitRound();
+        return;
+      }
+      exprMap[sid] = applyNumberPadKey(exprMap[sid], key);
+      touchedSeats.add(sid);
       renderLogRoundUI();
+    };
+
+    document.querySelectorAll('.np-key').forEach((btn) => {
+      btn.addEventListener('click', () => handlePadPress(btn.getAttribute('data-np')));
+    });
+
+    const switchOutBtn = document.getElementById('lr-switch-out-btn');
+    if (switchOutBtn) {
+      switchOutBtn.addEventListener('click', () => openScrabbleOutModal());
     }
+
+    activeModalKeydownHandler = (e) => {
+      if (document.activeElement && document.activeElement.id === 'lr-note') return;
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        handlePadPress(e.key);
+      } else if (e.key === '+') {
+        e.preventDefault();
+        handlePadPress('+');
+      } else if (e.key === '-') {
+        e.preventDefault();
+        handlePadPress('−');
+      } else if (e.key === '*' && !isGolf) {
+        e.preventDefault();
+        handlePadPress('×');
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        handlePadPress('BACK');
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handlePadPress('NEXT');
+      } else if (e.key === 'Escape') {
+        closeModal();
+      }
+    };
+    window.addEventListener('keydown', activeModalKeydownHandler);
+  };
+
+  renderLogRoundUI();
+}
 
     // MODAL 7: SCRABBLE "OUT" ENDGAME TILE-TRANSFER CALCULATOR
     function openScrabbleOutModal() {
@@ -5687,31 +5764,51 @@
     }
 
     function bindGlobalEvents() {
-      document.getElementById('header-copy-link-btn').addEventListener('click', () => {
-        handleQuickCopyAppLink(true);
-      });
+  document.getElementById('header-copy-link-btn').addEventListener('click', () => {
+    handleQuickCopyAppLink(true);
+  });
 
-      document.getElementById('header-players-btn').addEventListener('click', () => {
-        if (state.currentRoom) openRoomSettingsModal();
-      });
+  document.getElementById('header-players-btn').addEventListener('click', () => {
+    if (state.currentRoom) openRoomSettingsModal();
+  });
 
-      document.getElementById('header-profile-btn').addEventListener('click', () => {
-        openJoinOrCreateIdentityModal({ profileOnly: true });
-      });
+  document.getElementById('header-profile-btn').addEventListener('click', () => {
+    openJoinOrCreateIdentityModal({ profileOnly: true });
+  });
 
-      document.getElementById('header-home-btn').addEventListener('click', () => {
-        if (state.view !== 'landing') {
-          leaveRoomLocal();
-        }
-      });
-
-      // Clicking outside the modal closes it
-      document.getElementById('modal-backdrop').addEventListener('click', (e) => {
-        if (e.target.id === 'modal-backdrop') {
-          closeModal();
-        }
-      });
+  document.getElementById('header-home-btn').addEventListener('click', () => {
+    if (state.view !== 'landing') {
+      leaveRoomLocal();
     }
+  });
+
+  // Clicking outside the modal closes it
+  document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'modal-backdrop') {
+      closeModal();
+    }
+  });
+
+  // In-app Pull-to-Refresh for PWA & mobile browsers
+  let pullStartY = 0;
+  let isPulling = false;
+
+  window.addEventListener('touchstart', (e) => {
+    if (window.scrollY === 0 && state.currentRoomCode) {
+      pullStartY = e.touches[0].clientY;
+      isPulling = true;
+    }
+  }, { passive: true });
+
+  window.addEventListener('touchend', async (e) => {
+    if (!isPulling) return;
+    isPulling = false;
+    const pullDistance = e.changedTouches[0].clientY - pullStartY;
+    if (pullDistance > 85 && window.scrollY === 0 && state.currentRoomCode) {
+      await syncCurrentRoomNow({ silent: false });
+    }
+  }, { passive: true });
+}
 
     // Bootstrap Application
     initTheme();
