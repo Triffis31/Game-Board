@@ -1828,34 +1828,46 @@ document.addEventListener('visibilitychange', () => {
     }
 
     async function initiateJoinRoomFlow(code) {
-      const cleanCode = String(code || '').replace(/\s+/g, '').toUpperCase();
-      try {
-        const room = await fetchRoom(cleanCode);
-        if (!room) {
-          forgetRoomCode(cleanCode);
-          showToast(`Room "${cleanCode}" wasn't found or has been closed.`, 'error');
-          return;
-        }
-        const alreadyIn = (room.players || []).some(
-          (p) =>
-            (state.currentUser.uid && p.claimedByUid === state.currentUser.uid) ||
-            (state.currentUser.profileId && p.profileId && p.profileId === state.currentUser.profileId)
-        );
-        if (alreadyIn) {
-          subscribeRoom(room.code);
-          showToast(`Rejoined room ${room.code}!`, 'success');
-          return;
-        }
-        openJoinOrCreateIdentityModal({ mode: 'join', targetRoom: room });
-      } catch (err) {
-        console.error('Failed joining room:', err);
-        if (err?.code === 'permission-denied') {
-          showToast('Preview database denied access in this session (Incognito needs a signed-in preview or your own Firebase config).', 'error');
-        } else {
-          showToast(`Could not connect to room (${err?.code || 'network error'}). Please try again.`, 'error');
+  const cleanCode = String(code || '').replace(/\s+/g, '').toUpperCase();
+  try {
+    const room = await fetchRoom(cleanCode);
+    if (!room) {
+      forgetRoomCode(cleanCode);
+      showToast(`Room "${cleanCode}" wasn't found or has been closed.`, 'error');
+      return;
+    }
+
+    const matchingSeat = (room.players || []).find(
+      (p) =>
+        (state.currentUser.uid && p.claimedByUid === state.currentUser.uid) ||
+        (state.currentUser.profileId && p.profileId && p.profileId === state.currentUser.profileId)
+    );
+
+    if (matchingSeat) {
+      // If the host pre-linked this seat by email, claim it for this device automatically
+      if (!matchingSeat.claimedByUid && state.currentUser.uid) {
+        const updated = JSON.parse(JSON.stringify(room));
+        const target = (updated.players || []).find((p) => p.seatId === matchingSeat.seatId);
+        if (target) {
+          target.claimedByUid = state.currentUser.uid;
+          await saveRoom(updated);
         }
       }
+      subscribeRoom(room.code);
+      showToast(`Rejoined room ${room.code}!`, 'success');
+      return;
     }
+
+    openJoinOrCreateIdentityModal({ mode: 'join', targetRoom: room });
+  } catch (err) {
+    console.error('Failed joining room:', err);
+    if (err?.code === 'permission-denied') {
+      showToast('Preview database denied access in this session (Incognito needs a signed-in preview or your own Firebase config).', 'error');
+    } else {
+      showToast(`Could not connect to room (${err?.code || 'network error'}). Please try again.`, 'error');
+    }
+  }
+}
 
     // =========================================================================
     // 9B. VIEW: ROOM LOBBY (Players, Invite Link, Saved Games & Game Catalog)
@@ -3429,403 +3441,535 @@ document.addEventListener('visibilitychange', () => {
     // =========================================================================
 
     // MODAL 1: IDENTITY / SEAT CLAIMING / PROFILE LOGIN (Tabbed: Details vs. Game Piece)
-    function openJoinOrCreateIdentityModal({ mode = 'create', targetRoom = null, profileOnly = false } = {}) {
-      const unclaimedSeats = mode === 'join' && targetRoom
-        ? (targetRoom.players || []).filter((p) => !p.claimedByUid)
-        : [];
+    // MODAL 1: IDENTITY / SEAT CLAIMING / PROFILE LOGIN (Stepped Screens)
+function openJoinOrCreateIdentityModal({ mode = 'create', targetRoom = null, profileOnly = false } = {}) {
+  const isJoin = mode === 'join' && !profileOnly && Boolean(targetRoom);
+  const allSeats = isJoin ? (targetRoom.players || []) : [];
+  const firstOpenSeat = allSeats.find((s) => !s.claimedByUid) || null;
 
-      let modalTab = 'details'; // 'details' | 'piece'
-      let selectedSeatId = unclaimedSeats.length > 0 ? unclaimedSeats[0].seatId : '__new__';
-      let authTab = state.currentUser.isGuest ? 'guest' : 'email';
-      let nameVal = state.currentUser.name || (selectedSeatId !== '__new__' ? unclaimedSeats[0].name : '');
-      let emailVal = state.currentUser.email || '';
-      let avatarVal = getAvatarObj(state.currentUser.avatar || (selectedSeatId !== '__new__' ? unclaimedSeats[0].avatar : '♟️')).emoji;
+  // Steps: Join starts on 'seat'; Create & Profile start on 'name'
+  const steps = isJoin
+    ? [
+        { id: 'seat', label: '1. Seat' },
+        { id: 'name', label: '2. Name' },
+        { id: 'piece', label: '3. Piece' },
+        { id: 'settings', label: '4. Settings' },
+      ]
+    : [
+        { id: 'name', label: '1. Name' },
+        { id: 'piece', label: '2. Piece' },
+        { id: 'settings', label: '3. Settings' },
+      ];
 
-      const renderIdentityModal = () => {
-        const title = profileOnly
-          ? 'Your Profile'
-          : mode === 'create'
-            ? 'Set Up Your Seat'
-            : `Join ${(targetRoom?.name || '').trim() || `Room ${targetRoom?.code || ''}`}`;
-        const currentPieceObj = getAvatarObj(avatarVal);
-        const isDark = state.theme === 'dark';
+  let currentStep = isJoin ? 'seat' : 'name';
+  let selectedSeatId = isJoin ? (firstOpenSeat ? firstOpenSeat.seatId : '__new__') : '__new__';
+  let appliedSeatId = null;
 
-        openModal(`
-          <div class="p-5 sm:p-6 space-y-5">
-            <div class="flex items-center justify-between gap-2">
-              <div>
-                <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-                  ${profileOnly ? 'Profile & Settings' : mode === 'create' ? 'New Table' : 'Room Entry'}
-                </span>
-                <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(title)}</h2>
-              </div>
-              <button type="button" id="id-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-sm">✕</button>
-            </div>
+  let authTab = state.currentUser.isGuest ? 'guest' : 'email';
+  let nameVal = state.currentUser.name || '';
+  let emailVal = state.currentUser.email || '';
+  let avatarVal = getAvatarObj(state.currentUser.avatar || '♟️').emoji;
+  let seatPreLinkedByHost = false;
 
-            <!-- Main Modal Section Tabs: Name & Details vs. Game Piece -->
-            <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
-              <button type="button" data-modal-tab="details" class="id-main-tab-btn py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
-                modalTab === 'details'
+  const applySeatSelectionToFields = (seatId) => {
+    if (!isJoin || appliedSeatId === seatId) return;
+    appliedSeatId = seatId;
+    if (seatId === '__new__') {
+      seatPreLinkedByHost = false;
+      nameVal = state.currentUser.name || '';
+      emailVal = state.currentUser.email || '';
+      avatarVal = getAvatarObj(state.currentUser.avatar || '♟️').emoji;
+      authTab = state.currentUser.isGuest ? 'guest' : 'email';
+      return;
+    }
+    const found = allSeats.find((s) => s.seatId === seatId);
+    if (!found) return;
+    nameVal = found.name || state.currentUser.name || '';
+    avatarVal = getAvatarObj(found.avatar || state.currentUser.avatar || '♟️').emoji;
+    if (found.profileId || found.email) {
+      seatPreLinkedByHost = true;
+      authTab = 'email';
+      emailVal = found.email || state.currentUser.email || '';
+    } else {
+      seatPreLinkedByHost = false;
+      authTab = 'guest';
+      emailVal = state.currentUser.email || '';
+    }
+  };
+
+  if (isJoin) {
+    applySeatSelectionToFields(selectedSeatId);
+  }
+
+  const renderIdentityModal = () => {
+    const title = profileOnly
+      ? 'Your Profile'
+      : mode === 'create'
+      ? 'Set Up Your Seat'
+      : `Join ${(targetRoom?.name || '').trim() || `Room ${targetRoom?.code || ''}`}`;
+
+    const stepIdx = steps.findIndex((s) => s.id === currentStep);
+    const isLastStep = stepIdx === steps.length - 1;
+    const isDark = state.theme === 'dark';
+    const selectedSeatObj = isJoin && selectedSeatId !== '__new__'
+      ? allSeats.find((s) => s.seatId === selectedSeatId) || null
+      : null;
+
+    openModal(`
+      <div class="p-5 sm:p-6 space-y-5">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+              ${profileOnly ? 'Profile & Settings' : mode === 'create' ? 'New Table' : 'Room Entry'}
+            </span>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">${escapeHtml(title)}</h2>
+          </div>
+          <button type="button" id="id-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-sm">✕</button>
+        </div>
+
+        <!-- Step Navigation Bar -->
+        <div class="grid ${isJoin ? 'grid-cols-4' : 'grid-cols-3'} p-1 rounded-2xl bg-slate-100 dark:bg-slate-800 gap-1">
+          ${steps.map((s) => `
+            <button
+              type="button"
+              data-step-id="${s.id}"
+              class="id-step-tab py-2 px-1 rounded-xl text-[11px] font-extrabold transition truncate ${
+                currentStep === s.id
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-              }">
-                <span>👤 Name &amp; Info</span>
-              </button>
-              <button type="button" data-modal-tab="piece" class="id-main-tab-btn py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
-                modalTab === 'piece'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-              }">
-                <span class="text-base leading-none">${currentPieceObj.emoji}</span>
-                <span>Game Piece</span>
-              </button>
+              }"
+            >
+              ${s.label}
+            </button>
+          `).join('')}
+        </div>
+
+        <!-- SCREEN: SELECT SEAT (Join Room Only) -->
+        ${currentStep === 'seat' ? `
+          <div class="space-y-3">
+            <div>
+              <div class="text-sm font-extrabold text-slate-900 dark:text-white">Players in This Room</div>
+              <p class="text-xs text-slate-500 dark:text-slate-400">
+                Claim an open seat created by the host, or join as a new player.
+              </p>
             </div>
 
-            ${modalTab === 'details' ? `
-              <div class="space-y-4">
-                ${unclaimedSeats.length > 0 ? `
-                  <div class="space-y-2">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Claim a Seat Created by the Host
-                    </label>
-                    <div class="grid grid-cols-2 gap-2">
-                      ${unclaimedSeats.map((s) => {
-                        const av = getAvatarObj(s.avatar);
-                        const active = selectedSeatId === s.seatId;
-                        return `
-                          <button type="button" data-claim-seat="${escapeHtml(s.seatId)}" class="id-seat-btn p-2.5 rounded-2xl border-2 text-left flex items-center gap-2 transition ${
-                            active
-                              ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50'
-                              : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
-                          }">
-                            <span class="text-lg">${av.emoji}</span>
-                            <span class="font-bold text-sm truncate text-slate-900 dark:text-white">${escapeHtml(s.name)}</span>
-                          </button>
-                        `;
-                      }).join('')}
-                      <button type="button" data-claim-seat="__new__" class="id-seat-btn p-2.5 rounded-2xl border-2 text-left flex items-center gap-2 transition ${
-                        selectedSeatId === '__new__'
-                          ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
-                      }">
-                        <span class="text-lg">➕</span>
-                        <span class="font-bold text-sm text-slate-900 dark:text-white">New Seat</span>
-                      </button>
+            <div class="space-y-2 max-h-[42vh] overflow-y-auto pr-0.5">
+              ${allSeats.map((s) => {
+                const av = getAvatarObj(s.avatar);
+                const isClaimed = Boolean(s.claimedByUid);
+                const hasHostEmail = Boolean(s.profileId || s.email);
+                const isSelected = !isClaimed && selectedSeatId === s.seatId;
+                return `
+                  <button
+                    type="button"
+                    data-claim-seat="${escapeHtml(s.seatId)}"
+                    ${isClaimed ? 'disabled' : ''}
+                    class="id-seat-btn w-full p-3 rounded-2xl border-2 text-left flex items-center justify-between gap-3 transition ${
+                      isClaimed
+                        ? 'border-slate-200/70 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30 opacity-60 cursor-not-allowed'
+                        : isSelected
+                        ? 'border-indigo-600 dark:border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/50 shadow-sm'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'
+                    }"
+                  >
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${av.color}">${av.emoji}</span>
+                      <div class="min-w-0">
+                        <div class="font-bold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(s.name)}</div>
+                        <div class="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                          ${hasHostEmail ? 'Email profile linked' : 'Guest seat'}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ` : ''}
-
-                <!-- Guest vs Email Profile Switcher -->
-                <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80">
-                  <button type="button" data-auth-tab="guest" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
-                    authTab === 'guest'
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }">
-                    Continue as Guest
+                    <span class="px-2.5 py-1 rounded-xl text-[11px] font-extrabold shrink-0 ${
+                      isClaimed
+                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                        : 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300'
+                    }">
+                      ${isClaimed ? 'Claimed' : 'Open'}
+                    </span>
                   </button>
-                  <button type="button" data-auth-tab="email" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
-                    authTab === 'email'
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }">
-                    Name &amp; Email Login
-                  </button>
-                </div>
+                `;
+              }).join('')}
 
-                <div class="space-y-3">
+              <button
+                type="button"
+                data-claim-seat="__new__"
+                class="id-seat-btn w-full p-3 rounded-2xl border-2 text-left flex items-center justify-between gap-3 transition ${
+                  selectedSeatId === '__new__'
+                    ? 'border-indigo-600 dark:border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/50 shadow-sm'
+                    : 'border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400'
+                }"
+              >
+                <div class="flex items-center gap-2.5">
+                  <span class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-base">➕</span>
                   <div>
-                    <label for="id-name-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Display Name</label>
-                    <input
-                      id="id-name-input"
-                      type="text"
-                      maxlength="24"
-                      value="${escapeHtml(nameVal)}"
-                      placeholder="e.g., Alex"
-                      class="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
+                    <div class="font-bold text-sm text-slate-900 dark:text-white">Join as New Player</div>
+                    <div class="text-[11px] text-slate-500 dark:text-slate-400">Create a brand new seat at this table</div>
                   </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        ` : ''}
 
-                  ${authTab === 'email' ? `
-                    <div>
-                      <label for="id-email-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Email (for ongoing history &amp; favorites)</label>
-                      <div class="flex gap-2">
-                        <input
-                          id="id-email-input"
-                          type="email"
-                          value="${escapeHtml(emailVal)}"
-                          placeholder="you@example.com"
-                          class="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
-                        <button type="button" id="id-lookup-email-btn" class="px-3.5 py-2 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs shrink-0 hover:bg-indigo-100 transition">
-                          Load
-                        </button>
-                      </div>
-                    </div>
-                  ` : ''}
+        <!-- SCREEN: CHOOSE NAME & LOGIN -->
+        ${currentStep === 'name' ? `
+          <div class="space-y-4">
+            ${selectedSeatObj ? `
+              <div class="p-3 rounded-2xl border text-xs ${
+                seatPreLinkedByHost
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/70 text-emerald-800 dark:text-emerald-200'
+                  : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/70 text-indigo-800 dark:text-indigo-200'
+              }">
+                ${seatPreLinkedByHost
+                  ? `<strong>✓ Email Linked by Host:</strong> This seat for <strong>${escapeHtml(selectedSeatObj.name)}</strong> is already connected to ${escapeHtml(selectedSeatObj.email || 'your email profile')}.`
+                  : `Claiming guest seat <strong>${escapeHtml(selectedSeatObj.name)}</strong>. You can continue as a Guest or switch to <strong>Name &amp; Email Login</strong> to link your profile.`
+                }
+              </div>
+            ` : ''}
 
-                  <!-- Compact Selected Game Piece Shortcut -->
-                  <button type="button" id="id-go-piece-btn" class="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500 flex items-center justify-between gap-3 transition">
-                    <div class="flex items-center gap-3">
-                      <span class="w-10 h-10 rounded-xl flex items-center justify-center text-2xl ${currentPieceObj.color}">${currentPieceObj.emoji}</span>
-                      <div class="text-left">
-                        <div class="text-xs font-extrabold text-slate-900 dark:text-white">Your Game Piece</div>
-                        <div class="text-[11px] text-slate-500 dark:text-slate-400">Tap to browse all emojis or roll random</div>
-                      </div>
-                    </div>
-                    <span class="text-xs font-bold text-indigo-600 dark:text-indigo-400 shrink-0">Change →</span>
-                  </button>
+            <!-- Guest vs Email Switcher -->
+            <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80">
+              <button type="button" data-auth-tab="guest" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
+                authTab === 'guest'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400'
+              }">
+                Continue as Guest
+              </button>
+              <button type="button" data-auth-tab="email" class="id-tab-btn py-2 rounded-xl text-xs font-bold transition ${
+                authTab === 'email'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400'
+              }">
+                Name &amp; Email Login
+              </button>
+            </div>
 
-                  <!-- Appearance / Dark Mode Toggle -->
-                  <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
-                    <div class="flex items-center gap-2.5">
-                      <span class="w-9 h-9 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-base">
-                        ${isDark ? '🌙' : '☀️'}
-                      </span>
-                      <div>
-                        <div class="text-xs font-extrabold text-slate-900 dark:text-white">Dark Mode</div>
-                        <div class="text-[11px] text-slate-500 dark:text-slate-400">${isDark ? 'Dark theme active' : 'Light theme active'}</div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      id="id-theme-toggle-btn"
-                      role="switch"
-                      aria-checked="${isDark ? 'true' : 'false'}"
-                      class="relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${isDark ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'}"
-                    >
-                      <span class="inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${isDark ? 'translate-x-6' : 'translate-x-1'}"></span>
+            <div class="space-y-3">
+              <div>
+                <label for="id-name-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Display Name</label>
+                <input
+                  id="id-name-input"
+                  type="text"
+                  maxlength="24"
+                  value="${escapeHtml(nameVal)}"
+                  placeholder="e.g., Alex"
+                  class="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              ${authTab === 'email' ? `
+                <div>
+                  <label for="id-email-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Email Address</label>
+                  <div class="flex gap-2">
+                    <input
+                      id="id-email-input"
+                      type="email"
+                      value="${escapeHtml(emailVal)}"
+                      placeholder="you@example.com"
+                      class="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button type="button" id="id-lookup-email-btn" class="px-3.5 py-2 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs shrink-0 hover:bg-indigo-100 transition">
+                      Load
                     </button>
                   </div>
                 </div>
-              </div>
-            ` : `
-              <!-- Game Piece Tab -->
-              <div class="space-y-3">
-                ${buildEmojiPickerHtml(avatarVal, 'id-ep')}
-              </div>
-            `}
+              ` : ''}
+            </div>
+          </div>
+        ` : ''}
 
-            <button type="button" id="id-submit-btn" class="w-full py-3.5 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm shadow-sm transition">
+        <!-- SCREEN: CHOOSE GAME PIECE -->
+        ${currentStep === 'piece' ? `
+          <div class="space-y-3">
+            ${buildEmojiPickerHtml(avatarVal, 'id-ep')}
+          </div>
+        ` : ''}
+
+        <!-- SCREEN: APP SETTINGS (DARK MODE) -->
+        ${currentStep === 'settings' ? `
+          <div class="space-y-4">
+            <div>
+              <div class="text-sm font-extrabold text-slate-900 dark:text-white">App Settings</div>
+              <p class="text-xs text-slate-500 dark:text-slate-400">
+                Choose how Game Board looks on your device.
+              </p>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <span class="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-lg">
+                  ${isDark ? '🌙' : '☀️'}
+                </span>
+                <div>
+                  <div class="text-sm font-extrabold text-slate-900 dark:text-white">Dark Mode</div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400">${isDark ? 'Dark theme active' : 'Light theme active'}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                id="id-theme-toggle-btn"
+                role="switch"
+                aria-checked="${isDark ? 'true' : 'false'}"
+                class="relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${isDark ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'}"
+              >
+                <span class="inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${isDark ? 'translate-x-6' : 'translate-x-1'}"></span>
+              </button>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Bottom Action Buttons -->
+        <div class="flex items-center gap-2.5 pt-1">
+          ${stepIdx > 0 ? `
+            <button type="button" id="id-back-btn" class="px-4 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-sm transition">
+              ← Back
+            </button>
+          ` : ''}
+
+          ${!isLastStep ? `
+            <button type="button" id="id-next-btn" class="flex-1 py-3.5 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm shadow-sm transition">
+              Next: ${steps[stepIdx + 1].label.replace(/^\d+\.\s*/, '')} →
+            </button>
+          ` : `
+            <button type="button" id="id-submit-btn" class="flex-1 py-3.5 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-extrabold text-sm shadow-sm transition">
               ${profileOnly ? 'Save Profile' : mode === 'create' ? 'Create Room & Enter →' : selectedSeatId !== '__new__' ? 'Claim Seat & Join →' : 'Join Room →'}
             </button>
-          </div>
-        `, { maxWidth: 'max-w-md' });
+          `}
+        </div>
+      </div>
+    `, { maxWidth: 'max-w-md' });
 
-        const captureFields = () => {
-          const nEl = document.getElementById('id-name-input');
-          const eEl = document.getElementById('id-email-input');
-          if (nEl) nameVal = nEl.value;
-          if (eEl) emailVal = eEl.value;
-        };
+    const captureFields = () => {
+      const nEl = document.getElementById('id-name-input');
+      const eEl = document.getElementById('id-email-input');
+      if (nEl) nameVal = nEl.value;
+      if (eEl) emailVal = eEl.value;
+    };
 
-        document.getElementById('id-close-btn').addEventListener('click', closeModal);
+    document.getElementById('id-close-btn').addEventListener('click', closeModal);
 
-        document.querySelectorAll('.id-main-tab-btn').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            captureFields();
-            modalTab = btn.getAttribute('data-modal-tab');
-            renderIdentityModal();
-          });
-        });
-
-        const goPieceBtn = document.getElementById('id-go-piece-btn');
-        if (goPieceBtn) {
-          goPieceBtn.addEventListener('click', () => {
-            captureFields();
-            modalTab = 'piece';
-            renderIdentityModal();
-          });
+    document.querySelectorAll('.id-step-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        captureFields();
+        const target = btn.getAttribute('data-step-id');
+        if (currentStep === 'seat' && target !== 'seat') {
+          applySeatSelectionToFields(selectedSeatId);
         }
+        currentStep = target;
+        renderIdentityModal();
+      });
+    });
 
-        const modalThemeBtn = document.getElementById('id-theme-toggle-btn');
-        if (modalThemeBtn) {
-          modalThemeBtn.addEventListener('click', () => {
-            captureFields();
-            applyTheme(state.theme === 'dark' ? 'light' : 'dark');
-            persistUserPreferences();
-            renderIdentityModal();
-          });
+    const backBtn = document.getElementById('id-back-btn');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        captureFields();
+        currentStep = steps[stepIdx - 1].id;
+        renderIdentityModal();
+      });
+    }
+
+    const nextBtn = document.getElementById('id-next-btn');
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        captureFields();
+        if (currentStep === 'seat') {
+          applySeatSelectionToFields(selectedSeatId);
         }
-
-        if (modalTab === 'piece') {
-          bindEmojiPickerEvents({
-            prefix: 'id-ep',
-            initialValue: avatarVal,
-            onSelect: (emojiStr) => {
-              avatarVal = emojiStr;
-              const tabEmoji = document.querySelector('[data-modal-tab="piece"] span:first-child');
-              if (tabEmoji) tabEmoji.textContent = emojiStr;
-            },
-          });
-        }
-
-        document.querySelectorAll('.id-seat-btn').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            captureFields();
-            selectedSeatId = btn.getAttribute('data-claim-seat');
-            if (selectedSeatId !== '__new__') {
-              const found = unclaimedSeats.find((s) => s.seatId === selectedSeatId);
-              if (found) {
-                if (!nameVal.trim()) nameVal = found.name;
-                avatarVal = getAvatarObj(found.avatar || avatarVal).emoji;
-              }
-            }
-            renderIdentityModal();
-          });
-        });
-
-        document.querySelectorAll('.id-tab-btn').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            captureFields();
-            authTab = btn.getAttribute('data-auth-tab');
-            renderIdentityModal();
-          });
-        });
-
-        const lookupBtn = document.getElementById('id-lookup-email-btn');
-        if (lookupBtn) {
-          lookupBtn.addEventListener('click', async () => {
-            captureFields();
-            const em = emailVal.trim().toLowerCase();
-            if (!em || !em.includes('@')) {
-              showToast('Enter a valid email address first.', 'warning');
-              return;
-            }
-            const pid = normalizeEmailToProfileId(em);
-            const existing = await fetchProfileById(pid);
-            if (existing) {
-              nameVal = existing.name || nameVal;
-              avatarVal = getAvatarObj(existing.avatar || avatarVal).emoji;
-              state.currentUser.favorites = Array.isArray(existing.favorites) ? existing.favorites : [];
-              showToast(`Welcome back, ${nameVal}!`, 'success');
-              renderIdentityModal();
-            } else {
-              showToast('No saved profile yet — we will create one when you continue.', 'info');
-            }
-          });
-        }
-
-        document.getElementById('id-submit-btn').addEventListener('click', async () => {
-          captureFields();
-          const cleanName = nameVal.trim();
-          if (!cleanName && !profileOnly) {
-            modalTab = 'details';
-            renderIdentityModal();
+        if (currentStep === 'name' && !profileOnly) {
+          if (!nameVal.trim()) {
             showToast('Please enter your display name.', 'warning');
             return;
           }
-
-          let profileId = state.currentUser.profileId || null;
-          let cleanEmail = state.currentUser.email || '';
-          const isGuest = authTab === 'guest';
-
-          if (!isGuest && (cleanName || emailVal.trim())) {
-            cleanEmail = emailVal.trim().toLowerCase();
-            if (!cleanEmail || !cleanEmail.includes('@')) {
-              modalTab = 'details';
-              renderIdentityModal();
+          if (authTab === 'email') {
+            const em = emailVal.trim().toLowerCase();
+            if (!em || !em.includes('@')) {
               showToast('Please enter a valid email address or switch to Guest.', 'warning');
               return;
             }
-            profileId = normalizeEmailToProfileId(cleanEmail);
-            const existing = await fetchProfileById(profileId);
-            const mergedFavs = Array.from(new Set([
-              ...(existing?.favorites || []),
-              ...(state.currentUser.favorites || []),
-            ]));
-            state.currentUser.favorites = mergedFavs;
-            await saveUserProfile({
-              profileId,
-              name: cleanName || state.currentUser.name || 'Player',
-              email: cleanEmail,
-              avatar: avatarVal,
-              favorites: mergedFavs,
-            });
-          } else if (isGuest) {
-            profileId = null;
-            cleanEmail = '';
           }
+        }
+        currentStep = steps[stepIdx + 1].id;
+        renderIdentityModal();
+      });
+    }
 
-          if (cleanName) state.currentUser.name = cleanName;
-          state.currentUser.email = cleanEmail;
-          state.currentUser.profileId = profileId;
-          state.currentUser.avatar = avatarVal;
-          state.currentUser.isGuest = isGuest;
-          await persistUserPreferences();
+    document.querySelectorAll('.id-seat-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        selectedSeatId = btn.getAttribute('data-claim-seat');
+        appliedSeatId = null;
+        applySeatSelectionToFields(selectedSeatId);
+        renderIdentityModal();
+      });
+    });
 
-          if (profileOnly) {
-            // Also update the user's seat inside an active room if present
-            if (state.currentRoom) {
-              const updated = JSON.parse(JSON.stringify(state.currentRoom));
-              const mySeat = (updated.players || []).find((p) => p.claimedByUid === state.currentUser.uid);
-              if (mySeat) {
-                if (cleanName) mySeat.name = cleanName;
-                mySeat.avatar = avatarVal;
-                mySeat.profileId = profileId;
-                await saveRoom(updated);
-              }
-            }
-            closeModal();
-            updateHeaderUI();
-            showToast('Profile updated!', 'success');
+    document.querySelectorAll('.id-tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        captureFields();
+        authTab = btn.getAttribute('data-auth-tab');
+        renderIdentityModal();
+      });
+    });
+
+    const lookupBtn = document.getElementById('id-lookup-email-btn');
+    if (lookupBtn) {
+      lookupBtn.addEventListener('click', async () => {
+        captureFields();
+        const em = emailVal.trim().toLowerCase();
+        if (!em || !em.includes('@')) {
+          showToast('Enter a valid email address first.', 'warning');
+          return;
+        }
+        const pid = normalizeEmailToProfileId(em);
+        const existing = await fetchProfileById(pid);
+        if (existing) {
+          nameVal = existing.name || nameVal;
+          avatarVal = getAvatarObj(existing.avatar || avatarVal).emoji;
+          state.currentUser.favorites = Array.isArray(existing.favorites) ? existing.favorites : [];
+          showToast(`Welcome back, ${nameVal}!`, 'success');
+          renderIdentityModal();
+        } else {
+          showToast('No saved profile yet — we will create one when you continue.', 'info');
+        }
+      });
+    }
+
+    if (currentStep === 'piece') {
+      bindEmojiPickerEvents({
+        prefix: 'id-ep',
+        initialValue: avatarVal,
+        onSelect: (emojiStr) => {
+          avatarVal = emojiStr;
+        },
+      });
+    }
+
+    const modalThemeBtn = document.getElementById('id-theme-toggle-btn');
+    if (modalThemeBtn) {
+      modalThemeBtn.addEventListener('click', () => {
+        applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+        persistUserPreferences();
+        renderIdentityModal();
+      });
+    }
+
+    const submitBtn = document.getElementById('id-submit-btn');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', async () => {
+        captureFields();
+        const cleanName = nameVal.trim();
+        if (!cleanName && !profileOnly) {
+          currentStep = 'name';
+          renderIdentityModal();
+          showToast('Please enter your display name.', 'warning');
+          return;
+        }
+
+        let profileId = state.currentUser.profileId || null;
+        let cleanEmail = state.currentUser.email || '';
+        const isGuest = authTab === 'guest';
+
+        if (!isGuest && (cleanName || emailVal.trim())) {
+          cleanEmail = emailVal.trim().toLowerCase();
+          if (!cleanEmail || !cleanEmail.includes('@')) {
+            currentStep = 'name';
+            renderIdentityModal();
+            showToast('Please enter a valid email address or switch to Guest.', 'warning');
             return;
           }
+          profileId = normalizeEmailToProfileId(cleanEmail);
+          const existing = await fetchProfileById(profileId);
+          const mergedFavs = Array.from(new Set([
+            ...(existing?.favorites || []),
+            ...(state.currentUser.favorites || []),
+          ]));
+          state.currentUser.favorites = mergedFavs;
+          await saveUserProfile({
+            profileId,
+            name: cleanName || state.currentUser.name || 'Player',
+            email: cleanEmail,
+            avatar: avatarVal,
+            favorites: mergedFavs,
+          });
+        } else if (isGuest) {
+          profileId = null;
+          cleanEmail = '';
+        }
 
-          try {
-            if (mode === 'create') {
-              // Generate a unique 4-character code
-              let code = generateRoomCode();
-              for (let tries = 0; tries < 5; tries++) {
-                const exists = await fetchRoom(code);
-                if (!exists) break;
-                code = generateRoomCode();
-              }
+        if (cleanName) state.currentUser.name = cleanName;
+        state.currentUser.email = cleanEmail;
+        state.currentUser.profileId = profileId;
+        state.currentUser.avatar = avatarVal;
+        state.currentUser.isGuest = isGuest;
+        await persistUserPreferences();
 
-              const newRoom = {
-                code,
-                hostUid: state.currentUser.uid,
-                status: 'lobby',
-                settings: { whoCanScore: 'anyone' },
-                players: [
-                  {
-                    seatId: generateId('seat'),
-                    name: cleanName,
-                    avatar: avatarVal,
-                    claimedByUid: state.currentUser.uid,
-                    profileId,
-                  },
-                ],
-                activeMatch: null,
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-              };
+        if (profileOnly) {
+          if (state.currentRoom) {
+            const updated = JSON.parse(JSON.stringify(state.currentRoom));
+            const mySeat = (updated.players || []).find((p) => p.claimedByUid === state.currentUser.uid);
+            if (mySeat) {
+              if (cleanName) mySeat.name = cleanName;
+              mySeat.avatar = avatarVal;
+              mySeat.profileId = profileId;
+              mySeat.email = cleanEmail;
+              await saveRoom(updated);
+            }
+          }
+          closeModal();
+          updateHeaderUI();
+          showToast('Profile updated!', 'success');
+          return;
+        }
 
-              await saveRoom(newRoom);
-              closeModal();
-              subscribeRoom(code);
-              showToast(`Room ${code} created! Share the code or invite link.`, 'success');
-            } else if (mode === 'join' && targetRoom) {
-              const freshRoom = (await fetchRoom(targetRoom.code)) || targetRoom;
-              const updated = JSON.parse(JSON.stringify(freshRoom));
-              updated.players = updated.players || [];
+        try {
+          if (mode === 'create') {
+            let code = generateRoomCode();
+            for (let tries = 0; tries < 5; tries++) {
+              const exists = await fetchRoom(code);
+              if (!exists) break;
+              code = generateRoomCode();
+            }
+            const newRoom = {
+              code,
+              hostUid: state.currentUser.uid,
+              status: 'lobby',
+              settings: { whoCanScore: 'anyone' },
+              players: [
+                {
+                  seatId: generateId('seat'),
+                  name: cleanName,
+                  avatar: avatarVal,
+                  claimedByUid: state.currentUser.uid,
+                  profileId,
+                  email: cleanEmail,
+                },
+              ],
+              activeMatch: null,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+            await saveRoom(newRoom);
+            closeModal();
+            subscribeRoom(code);
+            showToast(`Room ${code} created! Share the code or invite link.`, 'success');
+          } else if (mode === 'join' && targetRoom) {
+            const freshRoom = (await fetchRoom(targetRoom.code)) || targetRoom;
+            const updated = JSON.parse(JSON.stringify(freshRoom));
+            updated.players = updated.players || [];
 
-              if (selectedSeatId !== '__new__') {
-                const seat = updated.players.find((p) => p.seatId === selectedSeatId);
-                if (seat && !seat.claimedByUid) {
-                  seat.name = cleanName;
-                  seat.avatar = avatarVal;
-                  seat.claimedByUid = state.currentUser.uid;
-                  seat.profileId = profileId;
-                } else {
-                  updated.players.push({
-                    seatId: generateId('seat'),
-                    name: cleanName,
-                    avatar: avatarVal,
-                    claimedByUid: state.currentUser.uid,
-                    profileId,
-                  });
-                }
+            if (selectedSeatId !== '__new__') {
+              const seat = updated.players.find((p) => p.seatId === selectedSeatId);
+              if (seat && !seat.claimedByUid) {
+                seat.name = cleanName;
+                seat.avatar = avatarVal;
+                seat.claimedByUid = state.currentUser.uid;
+                seat.profileId = profileId;
+                seat.email = cleanEmail;
               } else {
                 updated.players.push({
                   seatId: generateId('seat'),
@@ -3833,23 +3977,35 @@ document.addEventListener('visibilitychange', () => {
                   avatar: avatarVal,
                   claimedByUid: state.currentUser.uid,
                   profileId,
+                  email: cleanEmail,
                 });
               }
-
-              await saveRoom(updated);
-              closeModal();
-              subscribeRoom(updated.code);
-              showToast(`Joined Room ${updated.code}!`, 'success');
+            } else {
+              updated.players.push({
+                seatId: generateId('seat'),
+                name: cleanName,
+                avatar: avatarVal,
+                claimedByUid: state.currentUser.uid,
+                profileId,
+                email: cleanEmail,
+              });
             }
-          } catch (err) {
-            console.error('Error creating/joining room:', err);
-            showToast('Something went wrong saving your seat. Please try again.', 'error');
-          }
-        });
-      };
 
-      renderIdentityModal();
+            await saveRoom(updated);
+            closeModal();
+            subscribeRoom(updated.code);
+            showToast(`Joined Room ${updated.code}!`, 'success');
+          }
+        } catch (err) {
+          console.error('Error creating/joining room:', err);
+          showToast('Something went wrong saving your seat. Please try again.', 'error');
+        }
+      });
     }
+  };
+
+  renderIdentityModal();
+}
 
     // MODAL 2: GAME DETAIL (Start Game, See Rules, See History)
     function openGameDetailModal(game) {
@@ -5504,79 +5660,274 @@ document.addEventListener('visibilitychange', () => {
     }
 
     // MODAL 11: HOST ADDS A NEW SEAT
-    function openAddSeatModal() {
-      let seatAvatar = pickRandomEmoji();
-      let seatName = '';
+    // MODAL 11: HOST ADDS A NEW SEAT (2 Separate Screens: Name/Email -> Game Piece)
+function openAddSeatModal() {
+  let step = 'name'; // 'name' | 'piece'
+  let authMode = 'guest'; // 'guest' | 'email'
+  let seatName = '';
+  let seatEmail = '';
+  let seatAvatar = pickRandomEmoji();
 
-      openModal(`
-        <div class="p-5 sm:p-6 space-y-5">
-          <div class="flex items-center justify-between gap-2">
-            <div>
-              <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Host Control</span>
-              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Add a Player Seat</h2>
+  const renderAddSeat = () => {
+    openModal(`
+      <div class="p-5 sm:p-6 space-y-5">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Host Control</span>
+            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Add a Player Seat</h2>
+          </div>
+          <button type="button" id="as-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+        </div>
+
+        <!-- 2-Step Tabs -->
+        <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800 gap-1">
+          <button
+            type="button"
+            data-as-step="name"
+            class="as-step-tab py-2 rounded-xl text-xs font-extrabold transition ${
+              step === 'name'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+            }"
+          >
+            1. Name &amp; Login
+          </button>
+          <button
+            type="button"
+            data-as-step="piece"
+            class="as-step-tab py-2 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
+              step === 'piece'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+            }"
+          >
+            <span>${getAvatarObj(seatAvatar).emoji}</span>
+            <span>2. Game Piece</span>
+          </button>
+        </div>
+
+        ${step === 'name' ? `
+          <div class="space-y-4">
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Create a seat to log scores right away. Add them as a guest or link their email profile so it’s ready when they join!
+            </p>
+
+            <!-- Guest vs Email Login Toggle -->
+            <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80">
+              <button type="button" data-as-auth="guest" class="as-auth-btn py-2 rounded-xl text-xs font-bold transition ${
+                authMode === 'guest'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400'
+              }">
+                Add as Guest
+              </button>
+              <button type="button" data-as-auth="email" class="as-auth-btn py-2 rounded-xl text-xs font-bold transition ${
+                authMode === 'email'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400'
+              }">
+                Add by Email Login
+              </button>
             </div>
-            <button id="as-close-btn" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">✕</button>
+
+            <div class="space-y-3">
+              ${authMode === 'email' ? `
+                <div>
+                  <label for="as-email-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Player Email Address</label>
+                  <div class="flex gap-2">
+                    <input
+                      id="as-email-input"
+                      type="email"
+                      value="${escapeHtml(seatEmail)}"
+                      placeholder="player@example.com"
+                      class="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button type="button" id="as-lookup-email-btn" class="px-3.5 py-2 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs shrink-0 hover:bg-indigo-100 transition">
+                      Load
+                    </button>
+                  </div>
+                </div>
+              ` : ''}
+
+              <div>
+                <label for="as-name-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Player Name</label>
+                <input
+                  id="as-name-input"
+                  type="text"
+                  maxlength="24"
+                  value="${escapeHtml(seatName)}"
+                  placeholder="e.g., Jordan"
+                  class="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
           </div>
 
-          <p class="text-xs text-slate-500 dark:text-slate-400">
-            Create a seat to log scores for someone right away. If they join the room on their own device later, they can claim this seat!
-          </p>
-
+          <div class="flex gap-2.5">
+            <button type="button" id="as-cancel-btn" class="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">Cancel</button>
+            <button type="button" id="as-next-btn" class="flex-1 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm transition">Next: Game Piece →</button>
+          </div>
+        ` : `
           <div class="space-y-3">
-            <div>
-              <label for="as-name-input" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Player Name</label>
-              <input
-                id="as-name-input"
-                type="text"
-                maxlength="24"
-                value="${escapeHtml(seatName)}"
-                placeholder="e.g., Jordan"
-                class="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-
             ${buildEmojiPickerHtml(seatAvatar, 'as-ep')}
           </div>
 
           <div class="flex gap-2.5">
-            <button id="as-cancel-btn" class="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">Cancel</button>
-            <button id="as-save-btn" class="flex-1 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm transition">Add Seat</button>
+            <button type="button" id="as-back-btn" class="px-4 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-sm">← Back</button>
+            <button type="button" id="as-save-btn" class="flex-1 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm transition">Add Seat</button>
           </div>
-        </div>
-      `, { maxWidth: 'max-w-md' });
+        `}
+      </div>
+    `, { maxWidth: 'max-w-md' });
 
-      document.getElementById('as-close-btn').addEventListener('click', closeModal);
-      document.getElementById('as-cancel-btn').addEventListener('click', closeModal);
+    const captureFields = () => {
+      const nEl = document.getElementById('as-name-input');
+      const eEl = document.getElementById('as-email-input');
+      if (nEl) seatName = nEl.value;
+      if (eEl) seatEmail = eEl.value;
+    };
 
+    document.getElementById('as-close-btn').addEventListener('click', closeModal);
+
+    document.querySelectorAll('.as-step-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        captureFields();
+        step = btn.getAttribute('data-as-step');
+        renderAddSeat();
+      });
+    });
+
+    document.querySelectorAll('.as-auth-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        captureFields();
+        authMode = btn.getAttribute('data-as-auth');
+        renderAddSeat();
+      });
+    });
+
+    const lookupBtn = document.getElementById('as-lookup-email-btn');
+    if (lookupBtn) {
+      lookupBtn.addEventListener('click', async () => {
+        captureFields();
+        const em = seatEmail.trim().toLowerCase();
+        if (!em || !em.includes('@')) {
+          showToast('Enter a valid email address first.', 'warning');
+          return;
+        }
+        const pid = normalizeEmailToProfileId(em);
+        const existing = await fetchProfileById(pid);
+        if (existing) {
+          seatName = existing.name || seatName;
+          seatAvatar = getAvatarObj(existing.avatar || seatAvatar).emoji;
+          showToast(`Loaded saved profile for ${seatName}!`, 'success');
+          renderAddSeat();
+        } else {
+          showToast('No saved profile found — a new profile will be linked to this email.', 'info');
+        }
+      });
+    }
+
+    const cancelBtn = document.getElementById('as-cancel-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    const nextBtn = document.getElementById('as-next-btn');
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        captureFields();
+        if (!seatName.trim()) {
+          showToast('Enter a name for this seat.', 'warning');
+          return;
+        }
+        if (authMode === 'email') {
+          const em = seatEmail.trim().toLowerCase();
+          if (!em || !em.includes('@')) {
+            showToast('Enter a valid email address or switch to Guest.', 'warning');
+            return;
+          }
+        }
+        step = 'piece';
+        renderAddSeat();
+      });
+    }
+
+    const backBtn = document.getElementById('as-back-btn');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        step = 'name';
+        renderAddSeat();
+      });
+    }
+
+    if (step === 'piece') {
       bindEmojiPickerEvents({
         prefix: 'as-ep',
         initialValue: seatAvatar,
         onSelect: (emojiStr) => {
           seatAvatar = emojiStr;
+          const tabEmoji = document.querySelector('[data-as-step="piece"] span:first-child');
+          if (tabEmoji) tabEmoji.textContent = emojiStr;
         },
       });
+    }
 
-      document.getElementById('as-save-btn').addEventListener('click', async () => {
-        const inp = document.getElementById('as-name-input');
-        const name = (inp ? inp.value : seatName).trim();
-        if (!name) {
+    const saveBtn = document.getElementById('as-save-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', async () => {
+        captureFields();
+        const cleanName = seatName.trim();
+        if (!cleanName) {
+          step = 'name';
+          renderAddSeat();
           showToast('Enter a name for this seat.', 'warning');
           return;
         }
+
+        let profileId = null;
+        let cleanEmail = '';
+        if (authMode === 'email') {
+          cleanEmail = seatEmail.trim().toLowerCase();
+          if (!cleanEmail || !cleanEmail.includes('@')) {
+            step = 'name';
+            renderAddSeat();
+            showToast('Enter a valid email address or switch to Guest.', 'warning');
+            return;
+          }
+          profileId = normalizeEmailToProfileId(cleanEmail);
+          const existing = await fetchProfileById(profileId);
+          if (!existing) {
+            await saveUserProfile({
+              profileId,
+              name: cleanName,
+              email: cleanEmail,
+              avatar: seatAvatar,
+              favorites: [],
+            });
+          }
+        }
+
         const updated = JSON.parse(JSON.stringify(state.currentRoom));
         updated.players = updated.players || [];
         updated.players.push({
           seatId: generateId('seat'),
-          name,
+          name: cleanName,
           avatar: seatAvatar,
           claimedByUid: null,
-          profileId: null,
+          profileId,
+          email: cleanEmail,
         });
+
         closeModal();
         await saveRoom(updated);
-        showToast(`Seat added for ${name}!`, 'success');
+        showToast(
+          cleanEmail ? `Seat added & linked to ${cleanEmail}!` : `Seat added for ${cleanName}!`,
+          'success'
+        );
       });
     }
+  };
+
+  renderAddSeat();
+}
 
     // MODAL 12: ROOM SETTINGS (Room Name, Host Transfer, Scoring Permissions, Copy Invite Link, Close Room)
     function openRoomSettingsModal() {
